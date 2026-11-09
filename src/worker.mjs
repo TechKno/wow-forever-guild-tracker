@@ -1,3 +1,5 @@
+import {refreshOneAccount} from './account-refresh.mjs';
+import {discoverRosterAccounts} from './account-discovery.mjs';
 import {CONFIG,REGION,RULESET_NAME,RULESET_LABEL,PUBLIC_ASSET_PATHS,ensureDeploymentIdentity} from './config.mjs';
 import {GUILD,SLUG,tick,state,api,refreshView,queueRefresh,mergeMember,probeCharacter,APIError} from './logic.mjs';
 import {authRoute,WebError,currentUser,requireMember,requireAdmin,requireWrite,readLimitedText,isSiteOrigin} from './auth.mjs';
@@ -188,6 +190,8 @@ export default {
     ctx.waitUntil((async()=>{
       await ensureDeploymentIdentity(env);
       await tick(env);
+      await discoverRosterAccounts(env);
+      await refreshOneAccount(env);
       const job=await env.DB.prepare('SELECT phase,next_at FROM sync WHERE id=1').first();
       if(job.phase==='roster'&&job.next_at>Math.floor(Date.now()/1000))await hydrateOneRecipe(env);
       await maintain(env);

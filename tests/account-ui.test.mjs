@@ -110,3 +110,41 @@ test('one main and three selected alts render and save together without truncati
  for(const id of [2,3,4])assert.match(p.root.innerHTML,new RegExp('name="alt_id" value="'+id+'" checked'));
  const links=p.events.find(event=>event.type==='guild-players').detail;assert.deepEqual(links.map(link=>link.character_id),[1,2,3,4]);assert(links.every(link=>link.main_character_id===1));
 });
+
+test('active character discovery shows a queued account check and its limited connection lifetime',()=>{
+ const sync={status:'active',checked_at:'2026-11-09T08:00:00Z',next_check_at:'2026-11-09T08:15:00Z',expires_at:'2026-11-09T20:00:00Z'},p=fixture(session({account_sync:sync}));
+ assert.match(p.root.innerHTML,/Automatic character discovery/);assert.match(p.root.innerHTML,/>Enabled<\/span>/);assert.match(p.root.innerHTML,/Characters already known to belong to you are linked at the next guild roster check/);assert.match(p.root.innerHTML,/New guild characters with no known owner queue authorised account checks while this connection is valid/);
+ for(const label of ['Last account check','Next account check','Connection expires'])assert(p.root.innerHTML.includes(label));
+ for(const date of [sync.checked_at,sync.next_check_at,sync.expires_at])assert(p.root.innerHTML.includes(new Date(date).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'})));
+ assert.match(p.root.innerHTML,/Levels, recipes and other WoW data follow the guild’s separate refresh schedule/);assert.match(p.root.innerHTML,/token expires or 24 hours after sign-in, whichever comes first/);
+ assert.doesNotMatch(p.root.innerHTML,/>Sign in again to enable automatic discovery<\/a>|every 15 minutes|Waiting for new guild characters/);assert.equal(p.calls.length,0,'Rendering connection state must not start an account refresh');
+});
+
+test('active discovery waits for new guild arrivals when no account check is queued',()=>{
+ const p=fixture(session({account_sync:{status:'active',checked_at:'2026-11-09T08:00:00Z',next_check_at:null,expires_at:'2026-11-09T20:00:00Z'}}));
+ assert.match(p.root.innerHTML,/<dt>Next account check<\/dt><dd>Waiting for new guild characters<\/dd>/);assert.doesNotMatch(p.root.innerHTML,/Schedule unavailable|every 15 minutes/);assert.equal(p.calls.length,0);
+});
+
+test('missing or expired discovery connections clearly require another Battle.net sign-in',()=>{
+ const p=fixture();assert.match(p.root.innerHTML,/>Sign-in needed<\/span>/);assert.match(p.root.innerHTML,/>Sign in again to enable automatic discovery<\/a>/);assert.match(p.root.innerHTML,/Not checked yet/);
+ p.api.render(session({account_sync:{status:'reconnect_required',checked_at:'2026-11-09T08:00:00Z',next_check_at:'2026-11-09T08:15:00Z',expires_at:'2026-11-09T09:00:00Z'}}));
+ assert.match(p.root.innerHTML,/href="\/auth\/login">Sign in again to enable automatic discovery/);assert.doesNotMatch(p.root.innerHTML,/Next account check|Connection expires/);
+});
+
+test('paused and unavailable discovery report their state without promising a schedule or exposing provider details',()=>{
+ const p=fixture();
+ for(const [status,label]of [['paused','Paused'],['unavailable','Temporarily unavailable']]){
+  p.api.render(session({account_sync:{status,checked_at:'<script>bad</script>',next_check_at:'private-next',expires_at:'private-expiry',access_token:'private-token',error:'sensitive-provider-detail'}}));
+  assert(p.root.innerHTML.includes('>'+label+'</span>'));assert.match(p.root.innerHTML,/Recheck Battle.net access to check your guild characters during sign-in/);assert.match(p.root.innerHTML,/Not checked yet/);
+  assert.doesNotMatch(p.root.innerHTML,/Next account check|Connection expires|private-token|private-next|private-expiry|sensitive-provider-detail|<script>bad/);
+ }
+ p.api.render(session({account_sync:{status:'<img src=x onerror=bad()>'}}));assert.match(p.root.innerHTML,/>Sign-in needed<\/span>/);assert.doesNotMatch(p.root.innerHTML,/<img src=x/);
+ p.emit('guild-access-reset');assert.doesNotMatch(p.root.innerHTML,/Automatic character discovery|Last account check/);
+});
+
+test('privacy explains the private short-lived character-ID index and arrival-triggered token use',()=>{
+ const privacy=readFileSync(new URL('../public/privacy.html',import.meta.url),'utf8');
+ assert.match(privacy,/Battle.net access token encrypted on the server/);assert.match(privacy,/only to recheck character ownership and discover verified guild characters/);assert.match(privacy,/provider’s expiry or 24 hours after sign-in, whichever comes first/);assert.match(privacy,/delete it when you sign out/);assert.match(privacy,/do not store refresh tokens or your password/);
+ assert.match(privacy,/private index of character IDs returned by your authorised Battle.net account check, including characters not yet in the guild/);assert.match(privacy,/ID index is kept for up to 24 hours and deleted on sign-out or expiry/);assert.match(privacy,/It is never published/);assert.match(privacy,/Unrelated character names and details are not retained/);assert.match(privacy,/New guild characters without a matching owner can trigger authorised account checks/);assert.match(privacy,/accounts are not polled on a regular timer when there are no unmatched arrivals/);
+ assert.doesNotMatch(privacy,/do not save[^<]*Blizzard access tokens|unrelated characters are not retained|normally every 15 minutes/);
+});

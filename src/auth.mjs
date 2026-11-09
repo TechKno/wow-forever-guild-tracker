@@ -1,3 +1,4 @@
+import {credentialSaveStatement} from './account-credentials.mjs';
 import {mergeMember,GUILD} from './logic.mjs';
 import {candidateFromAccount,validateProfileMember,profileMemberStatement} from './guild-membership.mjs';
 import {profileJoinedStatement} from './roster-progress.mjs';
@@ -20,11 +21,11 @@ function redirect(location,cookies=[]){
   for(const item of cookies)headers.append('Set-Cookie',item);
   return new Response(null,{status:303,headers});
 }
-async function providerJSON(url,options={}){
+export async function providerJSON(url,options={}){
   const {timeoutMs=20000,...fetchOptions}=options;
   let response;
   try{response=await fetch(url,{...fetchOptions,cache:'no-store',redirect:'manual',signal:AbortSignal.timeout(timeoutMs)});}catch{throw new WebError('Battle.net could not be reached',502);}
-  if(!response.ok){await response.body?.cancel();throw new WebError('Battle.net did not return the requested account data',502);}
+  if(!response.ok){await response.body?.cancel();const error=new WebError('Battle.net did not return the requested account data',502);error.providerStatus=response.status;const retry=Number(response.headers.get('Retry-After'));error.retryAfter=Number.isFinite(retry)&&retry>0?Math.min(3600,Math.ceil(retry)):0;throw error;}
   const text=await response.text();
   if(text.length>2000000)throw new WebError('Battle.net returned too much account data',502);
   try{const value=JSON.parse(text);if(!value||typeof value!=='object'||Array.isArray(value))throw 0;return value;}
@@ -47,7 +48,7 @@ export async function currentUser(request,env){
   return {...row,characters,verified,is_admin:(env.ADMIN_USER_IDS||'').split(',').map(v=>v.trim()).filter(Boolean).includes(row.id)};
 }
 export function requireAdmin(user){if(!user)throw new WebError('Sign in first',401);if(!user.is_admin)throw new WebError('Administrator access is required',403);}
-export function requireMember(user){if(!user)throw new WebError('Sign in with Battle.net to use the guild hall',401);if(!user.verified)throw new WebError('Battle.net has not verified a current '+GUILD+' character for this account',403);}
+export function requireMember(user){if(!user)throw new WebError('Sign in with Battle.net to use the guild hall',401);if(!user.verified)throw new WebError(`Battle.net has not verified a current ${GUILD} character for this account`,403);}
 export function requireWrite(request,user){
   if(!user)throw new WebError('Sign in first',401);
   const origin=new URL(request.url).origin;
@@ -79,8 +80,81 @@ export function ownCharacter(user,id){
   if(!char)throw new WebError('Choose one of your verified guild characters',403);
   return char;
 }
+export async function prepareAccountSync(env,user,accessToken,{maxProfiles=8,checkedAt=stamp()}={}){
+  if(!Number.isSafeInteger(maxProfiles)||maxProfiles<0||maxProfiles>8||!Number.isFinite(Date.parse(checkedAt)))throw new WebError('Invalid account check');
+  const created=checkedAt;
+  const account=await providerJSON(providerURL('/profile/user/wow'),
+    {headers:{Authorization:'Bearer '+accessToken,Accept:'application/json','Cache-Control':'no-cache',Pragma:'no-cache'}});
+  if(!Array.isArray(account.wow_accounts)||account.wow_accounts.some(a=>!Array.isArray(a.characters)))throw new WebError('Account character list is not recognised');
+  const accountCharacters=account.wow_accounts.flatMap(a=>a.characters);
+  const ids=[...new Set(accountCharacters.map(c=>c?.id).filter(id=>Number.isSafeInteger(id)&&id>0))];
+  if(ids.length>5000)throw new WebError('The account character list is too large');
+  const roster=await env.DB.prepare('SELECT DISTINCT m.character_id,0 departed FROM membership m JOIN sync s ON m.generation=s.published WHERE s.id=1 UNION ALL SELECT character_id,1 departed FROM membership_departures').all();
+  const guildIds=new Set(roster.results.filter(c=>!c.departed).map(c=>c.character_id));
+  const departedIds=new Set(roster.results.filter(c=>c.departed).map(c=>c.character_id));
+  const owned=ids.filter(id=>guildIds.has(id));
+  const proofs=[],scannedIds=new Set();
+  const scanKey='ownership_scan:'+user.id;
+  let scanNext=null;
+  const guildRow=await env.DB.prepare("SELECT value FROM state WHERE key='guild'").first();
+  let knownGuild;try{knownGuild=guildRow?JSON.parse(guildRow.value):null;}catch{knownGuild=null;}
+  if(Number.isSafeInteger(knownGuild?.id)&&knownGuild.id>0&&knownGuild.name===GUILD&&knownGuild.ruleset===RULESET_LABEL){
+    const candidates=new Map(),conflicts=new Set();
+    for(const character of accountCharacters){
+      const candidate=candidateFromAccount(character);if(!candidate||guildIds.has(candidate.id)||departedIds.has(candidate.id))continue;
+      if(candidates.has(candidate.id)&&candidates.get(candidate.id).slug!==candidate.slug)conflicts.add(candidate.id);
+      else candidates.set(candidate.id,candidate);
+    }
+    const unknown=[...candidates.values()].filter(c=>!conflicts.has(c.id));
+    if(unknown.length){
+      const saved=await env.DB.prepare('SELECT value FROM state WHERE key=?').bind(scanKey).first();
+      const prior=Number(saved?.value),offset=Number.isSafeInteger(prior)&&prior>=0?prior%unknown.length:0;
+      const selected=Array.from({length:Math.min(maxProfiles,unknown.length)},(_,index)=>unknown[(offset+index)%unknown.length]);
+      for(const candidate of selected)scannedIds.add(candidate.id);
+      scanNext=(offset+selected.length)%unknown.length;
+      // No provider href or member-entered character is trusted for discovery.
+      // Every candidate came from this sign-in's authenticated account summary.
+      for(let index=0;index<selected.length;index+=2){
+        const checked=await Promise.all(selected.slice(index,index+2).map(async candidate=>{
+          try{
+            const profile=await providerJSON(providerURL('/profile/wow/character/'+encodeURIComponent(candidate.slug)),
+              {headers:{Authorization:'Bearer '+accessToken,Accept:'application/json','Cache-Control':'no-cache',Pragma:'no-cache'},timeoutMs:10000});
+            return validateProfileMember(profile,candidate,knownGuild);
+          }catch{return null;}
+        }));
+        for(const proof of checked)if(proof){proofs.push(proof);owned.push(proof.id);}
+      }
+    }
+  }
+  const previous=await env.DB.prepare(`SELECT l.character_id,l.show_as_alt,f.guild_id,f.ruleset,f.checked_at,f.expires FROM character_links l
+    LEFT JOIN profile_members f ON f.character_id=l.character_id AND f.user_id=l.user_id WHERE l.user_id=?`).bind(user.id).all();
+  const returnedIds=new Set(ids),now=epoch();
+  // A bounded discovery pass must not forget a different alt's still-valid
+  // guild proof. Ownership must appear in this authenticated account reply;
+  // checked candidates, expired proofs and departures cannot be retained.
+  for(const prior of previous.results)if(returnedIds.has(prior.character_id)&&!guildIds.has(prior.character_id)&&!departedIds.has(prior.character_id)&&!scannedIds.has(prior.character_id)
+    &&prior.guild_id===knownGuild?.id&&knownGuild?.name===GUILD&&knownGuild?.ruleset===RULESET_LABEL&&prior.ruleset===3
+    &&prior.checked_at<=now&&prior.expires>now&&prior.expires-prior.checked_at===3600)owned.push(prior.character_id);
+  if(owned.length>100)throw new WebError('More than 100 guild characters require review');
+  const preferences=new Map(previous.results.map(r=>[r.character_id,r.show_as_alt]));
+  const statements=[env.DB.prepare('DELETE FROM profile_members WHERE user_id=? AND character_id NOT IN (SELECT value FROM json_each(?))').bind(user.id,JSON.stringify(owned)),env.DB.prepare('DELETE FROM character_links WHERE user_id=?').bind(user.id)];
+  const ownershipAt=Math.floor(Date.parse(created)/1000);
+  statements.push(env.DB.prepare('DELETE FROM account_character_ownership WHERE user_id=?').bind(user.id));
+  statements.push(env.DB.prepare(`INSERT INTO account_character_ownership(character_id,user_id,checked_at,expires_at)
+    SELECT value,?,?,? FROM json_each(?) WHERE 1 ON CONFLICT(character_id) DO UPDATE SET user_id=excluded.user_id,checked_at=excluded.checked_at,expires_at=excluded.expires_at
+    WHERE excluded.checked_at>account_character_ownership.checked_at OR (excluded.checked_at=account_character_ownership.checked_at AND excluded.user_id=account_character_ownership.user_id)`)
+    .bind(user.id,ownershipAt,ownershipAt+86400,JSON.stringify(ids)));
+  statements.push(env.DB.prepare(`INSERT INTO character_links(character_id,user_id,verified_at,show_as_alt) SELECT json_extract(value,'$.id'),?,?,json_extract(value,'$.alt') FROM json_each(?) WHERE 1 ON CONFLICT(character_id) DO UPDATE SET user_id=excluded.user_id,verified_at=excluded.verified_at,show_as_alt=excluded.show_as_alt`).bind(user.id,created,JSON.stringify(owned.map(id=>({id,alt:preferences.get(id)??1})))));
+  for(const proof of proofs)statements.push(profileMemberStatement(env,user.id,proof));
+  if(proofs.length)statements.push(env.DB.prepare('INSERT OR IGNORE INTO character_refresh(character_id,next_at) SELECT character_id,0 FROM profile_members WHERE user_id=?').bind(user.id));
+  if(scanNext!==null)statements.push(env.DB.prepare('INSERT OR REPLACE INTO state(key,value) VALUES(?,?)').bind(scanKey,String(scanNext)));
+  statements.push(env.DB.prepare('UPDATE users SET ownership_status=\'verified\',ownership_checked=?,updated_at=? WHERE id=?').bind(epoch(),created,user.id));
+  if(!owned.includes(user.main_character_id)&&owned.length)statements.push(env.DB.prepare('UPDATE users SET main_character_id=? WHERE id=?').bind(owned[0],user.id));
+  if(proofs.length)statements.push(profileJoinedStatement(env,user.id));
+  // Proof, ownership and character links become visible in one atomic commit.
+  return {statements,ownedIds:owned,accountCount:account.wow_accounts.length};
+}
 export async function authRoute(request,env){
-  await ensureDeploymentIdentity(env);
   const url=new URL(request.url);
   if(url.pathname==='/auth/login'&&request.method==='GET'){
     if(!env.BLIZZARD_CLIENT_ID||!env.BLIZZARD_CLIENT_SECRET)throw new WebError('Battle.net sign-in is not configured',503);
@@ -117,68 +191,10 @@ export async function authRoute(request,env){
       const user=await env.DB.prepare('SELECT * FROM users WHERE subject_hash=?').bind(subjectHash).first();
       let ownershipCommitted=false;
       try{
-        const account=await providerJSON(providerURL('/profile/user/wow'),
-          {headers:{Authorization:'Bearer '+tokens.access_token,Accept:'application/json'}});
-        if(!Array.isArray(account.wow_accounts)||account.wow_accounts.some(a=>!Array.isArray(a.characters)))throw new WebError('Account character list is not recognised');
-        const accountCharacters=account.wow_accounts.flatMap(a=>a.characters);
-        const ids=[...new Set(accountCharacters.map(c=>c?.id).filter(id=>Number.isSafeInteger(id)&&id>0))];
-        const roster=await env.DB.prepare('SELECT DISTINCT m.character_id,0 departed FROM membership m JOIN sync s ON m.generation=s.published WHERE s.id=1 UNION ALL SELECT character_id,1 departed FROM membership_departures').all();
-        const guildIds=new Set(roster.results.filter(c=>!c.departed).map(c=>c.character_id));
-        const departedIds=new Set(roster.results.filter(c=>c.departed).map(c=>c.character_id));
-        const owned=ids.filter(id=>guildIds.has(id));
-        const proofs=[],scannedIds=new Set();
-        const scanKey='ownership_scan:'+user.id;
-        let scanNext=null;
-        const guildRow=await env.DB.prepare("SELECT value FROM state WHERE key='guild'").first();
-        let knownGuild;try{knownGuild=guildRow?JSON.parse(guildRow.value):null;}catch{knownGuild=null;}
-        if(Number.isSafeInteger(knownGuild?.id)&&knownGuild.id>0&&knownGuild.name===GUILD&&knownGuild.ruleset===RULESET_LABEL){
-          const candidates=new Map(),conflicts=new Set();
-          for(const character of accountCharacters){
-            const candidate=candidateFromAccount(character);if(!candidate||guildIds.has(candidate.id)||departedIds.has(candidate.id))continue;
-            if(candidates.has(candidate.id)&&candidates.get(candidate.id).slug!==candidate.slug)conflicts.add(candidate.id);
-            else candidates.set(candidate.id,candidate);
-          }
-          const unknown=[...candidates.values()].filter(c=>!conflicts.has(c.id));
-          if(unknown.length){
-            const saved=await env.DB.prepare('SELECT value FROM state WHERE key=?').bind(scanKey).first();
-            const prior=Number(saved?.value),offset=Number.isSafeInteger(prior)&&prior>=0?prior%unknown.length:0;
-            const selected=Array.from({length:Math.min(8,unknown.length)},(_,index)=>unknown[(offset+index)%unknown.length]);
-            for(const candidate of selected)scannedIds.add(candidate.id);
-            scanNext=(offset+selected.length)%unknown.length;
-            // No provider href or member-entered character is trusted for discovery.
-            // Every candidate came from this sign-in's authenticated account summary.
-            for(let index=0;index<selected.length;index+=2){
-              const checked=await Promise.all(selected.slice(index,index+2).map(async candidate=>{
-                try{
-                  const profile=await providerJSON(providerURL('/profile/wow/character/'+encodeURIComponent(candidate.slug)),
-                    {headers:{Authorization:'Bearer '+tokens.access_token,Accept:'application/json','Cache-Control':'no-cache',Pragma:'no-cache'},timeoutMs:10000});
-                  return validateProfileMember(profile,candidate,knownGuild);
-                }catch{return null;}
-              }));
-              for(const proof of checked)if(proof){proofs.push(proof);owned.push(proof.id);}
-            }
-          }
-        }
-        const previous=await env.DB.prepare(`SELECT l.character_id,l.show_as_alt,f.guild_id,f.ruleset,f.checked_at,f.expires FROM character_links l
-          LEFT JOIN profile_members f ON f.character_id=l.character_id AND f.user_id=l.user_id WHERE l.user_id=?`).bind(user.id).all();
-        const returnedIds=new Set(ids),now=epoch();
-        // A bounded discovery pass must not forget a different alt's still-valid
-        // guild proof. Ownership must appear in this authenticated account reply;
-        // checked candidates, expired proofs and departures cannot be retained.
-        for(const prior of previous.results)if(returnedIds.has(prior.character_id)&&!guildIds.has(prior.character_id)&&!departedIds.has(prior.character_id)&&!scannedIds.has(prior.character_id)
-          &&prior.guild_id===knownGuild?.id&&knownGuild?.name===GUILD&&knownGuild?.ruleset===RULESET_LABEL&&prior.ruleset===3
-          &&prior.checked_at<=now&&prior.expires>now&&prior.expires-prior.checked_at===3600)owned.push(prior.character_id);
-        if(owned.length>23)throw new WebError('More than 23 guild characters require review');
-        const preferences=new Map(previous.results.map(r=>[r.character_id,r.show_as_alt]));
-        const statements=[env.DB.prepare('DELETE FROM profile_members WHERE user_id=? AND character_id NOT IN (SELECT value FROM json_each(?))').bind(user.id,JSON.stringify(owned)),env.DB.prepare('DELETE FROM character_links WHERE user_id=?').bind(user.id)];
-        for(const id of owned)statements.push(env.DB.prepare(`INSERT INTO character_links(character_id,user_id,verified_at,show_as_alt) VALUES(?,?,?,?) ON CONFLICT(character_id) DO UPDATE SET user_id=excluded.user_id,verified_at=excluded.verified_at,show_as_alt=excluded.show_as_alt`).bind(id,user.id,created,preferences.get(id)??1));
-        for(const proof of proofs)statements.push(profileMemberStatement(env,user.id,proof));
-        if(proofs.length)statements.push(env.DB.prepare('INSERT OR IGNORE INTO character_refresh(character_id,next_at) SELECT character_id,0 FROM profile_members WHERE user_id=?').bind(user.id));
-        if(scanNext!==null)statements.push(env.DB.prepare('INSERT OR REPLACE INTO state(key,value) VALUES(?,?)').bind(scanKey,String(scanNext)));
-        statements.push(env.DB.prepare('UPDATE users SET ownership_status=\'verified\',ownership_checked=?,updated_at=? WHERE id=?').bind(epoch(),created,user.id));
-        if(!owned.includes(user.main_character_id)&&owned.length)statements.push(env.DB.prepare('UPDATE users SET main_character_id=? WHERE id=?').bind(owned[0],user.id));
-        if(proofs.length)statements.push(profileJoinedStatement(env,user.id));
-        // Proof, ownership and character links become visible in one atomic commit.
+        await env.DB.prepare('DELETE FROM account_refresh WHERE user_id=?').bind(user.id).run();
+        const sync=await prepareAccountSync(env,user,tokens.access_token,{checkedAt:created});
+        const credential=sync.ownedIds.length?await credentialSaveStatement(env,user,tokens,created):null;
+        const statements=[...sync.statements,...(credential?[credential]:[])];
         await env.DB.batch(statements);
         ownershipCommitted=true;
       }catch{/* Identity may still sign in, but guild access fails closed until ownership is verified. */}
@@ -186,13 +202,13 @@ export async function authRoute(request,env){
       const session=random(),csrf=random(),old=cookie(request,'__Host-wv_session');
       if(old)await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await digest(old)).run();
       await env.DB.prepare('INSERT INTO sessions(token_hash,user_id,csrf,expires) VALUES(?,?,?,?)').bind(await digest(session),user.id,csrf,epoch()+86400).run();
-      // Only a random session cookie leaves the server. Provider tokens are discarded.
+      // Only a random session cookie leaves the server. A bounded encrypted user token supports account discovery.
       return redirect('/guild#overview',[setCookie('__Host-wv_session',session,86400),setCookie('__Host-wv_login','',0)]);
     }catch{return fail('provider');}
   }
   if(url.pathname==='/auth/logout'&&request.method==='POST'){
     const user=await currentUser(request,env);requireWrite(request,user);
-    await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(user.token_hash).run();
+    await env.DB.batch([env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(user.token_hash),env.DB.prepare('DELETE FROM account_refresh WHERE user_id=?').bind(user.id),env.DB.prepare('DELETE FROM account_character_ownership WHERE user_id=?').bind(user.id)]);
     return new Response(JSON.stringify({ok:true}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':setCookie('__Host-wv_session','',0)}});
   }
   return null;

@@ -34,7 +34,7 @@ async function signIn(f,{characters=[candidate],profiles=new Map([[candidate.slu
   const original=globalThis.fetch;let active=0,maxActive=0;
   globalThis.fetch=async(url,options={})=>{
     const target=new URL(url);calls.push({url:target.href,options});
-    if(target.hostname==='oauth.battle.net'&&target.pathname==='/token')return Response.json({access_token:'fixture-user-token-do-not-store'});
+    if(target.hostname==='oauth.battle.net'&&target.pathname==='/token')return Response.json({access_token:'fixture-user-token-do-not-store',expires_in:3600});
     if(target.hostname==='oauth.battle.net'&&target.pathname==='/userinfo')return Response.json({sub:'777',id:777});
     if(target.hostname==='eu.api.blizzard.com'&&target.pathname==='/profile/user/wow')return Response.json(account??{wow_accounts:[{characters}]},{status:accountStatus});
     if(target.hostname==='eu.api.blizzard.com'&&target.pathname.startsWith('/profile/wow/character/')){
@@ -72,7 +72,7 @@ test('a roster-missing account-owned character gets access only after exact indi
     assert.equal((await worker.fetch(result.request('/api/members'),f.env)).status,200);
     const userRow=await f.DB.prepare('SELECT * FROM users WHERE id=?').bind(result.user.id).first();
     assert.equal(userRow.main_character_id,91);assert.equal(userRow.ownership_status,'verified');
-    const fields=['users','sessions','character_links','profile_members','state'].flatMap(table=>f.DB.raw.prepare('SELECT * FROM '+table).all());
+    const fields=['users','sessions','character_links','profile_members','state','account_refresh'].flatMap(table=>f.DB.raw.prepare('SELECT * FROM '+table).all());
     assert(!JSON.stringify(fields).includes('fixture-user-token-do-not-store'));assert(!JSON.stringify(fields).includes('fixture-client-secret'));
   }
 });
@@ -259,4 +259,14 @@ test('rotation cannot retain alts with missing ownership, expired proof, departu
     assert.equal(await f.DB.prepare('SELECT character_id FROM profile_members WHERE character_id=?').bind(id).first(),null);
     assert.equal(await f.DB.prepare('SELECT character_id FROM character_links WHERE character_id=?').bind(id).first(),null);
   }
+});
+
+test('accounts with many guild alts use a bounded database batch rather than one insert per alt',async()=>{
+  const f=await fixture(),characters=Array.from({length:35},(_,i)=>({id:71+i}));
+  for(const c of characters.slice(1))await f.DB.prepare('INSERT INTO membership VALUES(?,?,?,?)').bind('current','known-alt-'+c.id,c.id,JSON.stringify({id:c.id,name:'Known Alt '+c.id,slug:'known-alt-'+c.id,level:5})).run();
+  f.DB.queries=0;
+  const result=await signIn(f,{characters,profiles:new Map()});
+  assert.equal(result.user.verified,true);assert.equal(result.user.characters.length,35);
+  assert(f.DB.queries<30,'Ownership synchronisation must not exhaust the free-tier database limit as more alts appear');
+  assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM account_refresh').first()).n,1);
 });

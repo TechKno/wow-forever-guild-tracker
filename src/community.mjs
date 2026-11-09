@@ -9,6 +9,7 @@ import {memberDirectory} from './discord-people.mjs';
 import {currentRolePreferences,withRolePreferences,saveRolePreferences} from './character-roles.mjs';
 import {eventTemplateSettings,eventTemplateGuidance} from './event-templates.mjs';
 import {rosterDisplayGroups,effectivePlayerMains} from './player-groups.mjs';
+import {accountSyncView} from './account-refresh.mjs';
 export function text(value,max,minimum=0){
   if(typeof value!=='string')throw new WebError('Check the text fields');
   const clean=value.trim().replaceAll('\u0000','');
@@ -32,6 +33,7 @@ export async function sessionView(request,env){
   return {signed_in:true,verified:user.verified,is_admin:user.is_admin,user_id:user.id,csrf:user.csrf,main_character_id:main?.id??null,
     account_updated_at:Number.isFinite(Date.parse(user.updated_at))?new Date(user.updated_at).toISOString():null,
     ownership_checked_at:Number.isFinite(user.ownership_checked)&&user.ownership_checked>0?new Date(user.ownership_checked*1000).toISOString():null,
+    account_sync:await accountSyncView(env,user),
     discord:await discordView(env,user),display_name:main?.name||'Battle.net member',characters:user.characters.map(c=>withRolePreferences(c,rolePreferences)),player_links:playerLinks,
     message:user.verified?'Guild character ownership verified by Battle.net':user.ownership_status!=='verified'?
       'Signed in, but Blizzard did not return a verifiable Forever account character list. Sign in again to retry.':
