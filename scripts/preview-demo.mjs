@@ -19,6 +19,9 @@ const recipes={
   stone:{id:1008,name:'Coarse Grinding Stone'},mace:{id:1009,name:'Bronze Mace'},wolf:{id:1010,name:'Spiced Wolf Meat'},boar:{id:1011,name:'Roasted Boar Meat'}
 };
 const rankLabels={'0':'Guildmaster','1':'Officer','2':'Veteran','3':'Member','4':'Initiate','5':'Reserve','6':'Recruit','7':'Newcomer','8':'Guest','9':'Visitor'};
+const galleryTitles=['Moonlight at the lakeshore','The long road home','Campfire stories'];
+const galleryIds=galleryTitles.map((_,index)=>`aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa${index+1}`);
+function demoGalleryArt(index){const colors=[['#1b3942','#547b76','#acc5a0'],['#8e5444','#bb8b62','#e3bf7d'],['#25354b','#4c5766','#a4a79c']][index];return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 750"><rect width="1200" height="750" fill="${colors[0]}"/><circle cx="925" cy="160" r="65" fill="${colors[2]}"/><path d="M0 430 180 235 360 420 595 190 845 430 1080 240 1200 380V750H0Z" fill="${colors[1]}"/><path d="M0 540 220 420 425 500 650 370 900 505 1200 405V750H0Z" fill="${colors[0]}"/><path d="M400 750 590 510 625 510 780 750" fill="${colors[2]}" opacity=".35"/><g fill="${colors[2]}" opacity=".6"><path d="m130 540 30-105 30 105h-18v55h-24v-55ZM980 570l40-145 40 145h-25v60h-30v-60Z"/></g><text x="65" y="650" fill="#fff4d9" font-family="Georgia,serif" font-size="46">${galleryTitles[index]}</text><text x="67" y="695" fill="#fff4d9" font-family="sans-serif" font-size="20" letter-spacing="4">FICTIONAL GALLERY PREVIEW</text></svg>`;}
 const demoPortrait='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 380"><defs><linearGradient id="paper" x2="0" y2="1"><stop stop-color="#e6d4ad"/><stop offset="1" stop-color="#f9f0de"/></linearGradient></defs><rect width="320" height="380" rx="14" fill="url(#paper)"/><circle cx="160" cy="120" r="77" fill="none" stroke="#b4965e" stroke-width="2"/><path d="M87 335c4-77 29-113 73-113s69 36 73 113" fill="#647653"/><path d="M124 99l36-44 36 44-14 17h-44z" fill="#53684a"/><circle cx="160" cy="145" r="42" fill="#d3b384"/><path d="M117 132c-2-49 88-54 86 0l-22-22-20 14-24-11z" fill="#66513a"/><path d="M128 184l32 30 32-30-6 34-26 20-26-20z" fill="#765b3c"/><path d="M104 258l56 28 56-28-12 50-44 34-44-34z" fill="#af8a45"/><path d="M260 320l-13-175 12-43 10 43-3 175" fill="#907348"/><text x="160" y="363" text-anchor="middle" font-family="Georgia,serif" font-size="12" fill="#715b38">FICTIONAL DEMO PORTRAIT</text></svg>';
 const profession=(name,id,skill,known=[],kind='Primary')=>({id,name,kind,tier:name,skill,max_skill:150,recipe_status:'observed',recipes:known});
 function materialPlan(crafts=1){
@@ -87,6 +90,7 @@ function adminOverview(fixtures){
 }
 function apiData(path,url,fixtures){
   if(path==='/api/public')return publicCount(fixtures);
+  if(path==='/api/gallery')return {items:url.searchParams.get('removed')==='1'?[]:galleryTitles.map((title,index)=>({id:galleryIds[index],title,caption:'An original fictional illustration for the read-only gallery preview. No member screenshot is shown.',author_name:['moss.and.moon','Oakshield','Cogworks'][index],created_at:observedAt,width:1200,height:750,image_url:`/api/gallery/${galleryIds[index]}/image`,thumbnail_url:`/api/gallery/${galleryIds[index]}/thumbnail`,can_manage:true,removed:false})),next:null,limits:{max_photos:200,max_bytes:100000000},can_upload:true,demo:true};
   if(path==='/api/status')return fixtures.status;
   if(path==='/api/members')return {generation,revision:generation,members:fixtures.members,next:null,demo:true};
   if(path==='/api/me')return fixtures.me;
@@ -135,6 +139,8 @@ export async function startDemoServer(options={}){
       const url=new URL(request.url,'http://127.0.0.1'),path=decodeURIComponent(url.pathname),head=request.method==='HEAD';
       if(path==='/healthz'){reply(response,200,{status:'ok',demo:true},undefined,head);return;}
       if(path==='/demo.css'){reply(response,200,demoCSS,types['.css'],head);return;}
+      const galleryImage=path.match(/^\/api\/gallery\/([^/]+)\/(image|thumbnail)$/);
+      if(galleryImage){const index=galleryIds.indexOf(galleryImage[1]);reply(response,index>=0?200:404,index>=0?demoGalleryArt(index):{error:'Fictional gallery image not found',demo:true},index>=0?types['.svg']:undefined,head);return;}
       const portrait=path.match(/^\/api\/characters\/(\d+)\/armory\/media\/main$/);
       if(portrait){const known=fixtures.members.some(member=>member.id===Number(portrait[1]));reply(response,known?200:404,known?demoPortrait:{error:'Fictional character not found',demo:true},known?types['.svg']:undefined,head);return;}
       if(path.startsWith('/auth/')){reply(response,200,demoHTML('<!doctype html><html><head><meta charset="utf-8"><title>Read-only guild demo</title></head><body><main><h1>Read-only demonstration</h1><p>'+readonlyMessage+'</p><p>No Battle.net or Discord account is connected.</p><a href="/guild">Return to the demo guildhall</a></main></body></html>'),types['.html'],head);return;}

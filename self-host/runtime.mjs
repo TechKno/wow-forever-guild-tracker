@@ -96,7 +96,8 @@ export function createRuntime({worker,DB,publicDirectory,origins,secrets={},trus
     try{
       const origin=known.get(String(request.headers.host||'').toLowerCase());
       if(!origin||typeof request.url!=='string'||!request.url.startsWith('/')||request.url.startsWith('//')){response.writeHead(400,{'Content-Type':'text/plain','Connection':'close'});response.end('Invalid request');return;}
-      const body=await readBody(request,65536),headers=new Headers();
+      const galleryUpload=request.method==='POST'&&new URL(request.url,origin).pathname==='/api/gallery';
+      const body=await readBody(request,galleryUpload?1500000:65536),headers=new Headers();
       for(const [name,value]of Object.entries(request.headers)){
         if(value===undefined||['host','connection','transfer-encoding','cf-connecting-ip','forwarded','x-forwarded-for','x-forwarded-host','x-forwarded-proto','x-guild-client-ip'].includes(name))continue;
         if(Array.isArray(value))for(const item of value)headers.append(name,item);else headers.set(name,value);

@@ -25,7 +25,7 @@ export function openDatabase(filename,migrationsDirectory){
   const meta=()=>{const result=raw.prepare('SELECT changes() changes,last_insert_rowid() rowid').get();return {changes:Number(result.changes),last_row_id:Number(result.rowid)};};
   class Statement{
     constructor(sql,params=[]){this.sql=sql;this.params=params;}
-    bind(...params){return new Statement(this.sql,params);}
+    bind(...params){return new Statement(this.sql,params.map(value=>value instanceof ArrayBuffer?new Uint8Array(value):value));}
     async first(column){const row=raw.prepare(this.sql).get(...this.params);return row?(column===undefined?row:row[column]??null):null;}
     async all(){return {success:true,results:raw.prepare(this.sql).all(...this.params),meta:meta()};}
     async run(){raw.prepare(this.sql).run(...this.params);return {success:true,results:[],meta:meta()};}

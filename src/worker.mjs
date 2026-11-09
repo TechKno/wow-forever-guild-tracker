@@ -17,6 +17,7 @@ import {membershipRevision} from './guild-membership.mjs';
 import {currentRolePreferences,withRolePreferences} from './character-roles.mjs';
 import {adminOverview} from './admin-overview.mjs';
 import {guildRanks} from './guild-ranks.mjs';
+import {galleryRoute} from './gallery.mjs';
 import {armoryView,armoryMedia,armoryIcon} from './armory.mjs';
 const securityHeaders={
   'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
@@ -70,6 +71,13 @@ async function handleRequest(request,env) {
       if(url.pathname==='/api'||url.pathname.startsWith('/api/')){
         try{const user=await currentUser(request,env);requireMember(user);await protectMember(request,env,user);}
         catch(error){if(error instanceof WebError&&[401,403].includes(error.status))return json({error:error.message,access_required:true},error.status);throw error;}
+      }
+      if(url.pathname==='/api/gallery'||url.pathname.startsWith('/api/gallery/')){
+        const result=await galleryRoute(request,env);
+        if(!(result instanceof Response))return json(result);
+        const headers=new Headers(result.headers);for(const [key,value]of Object.entries(securityHeaders))headers.set(key,value);
+        headers.set('Cache-Control','private, no-store');headers.set('Vary','Cookie');
+        return new Response(result.body,{status:result.status,headers});
       }
       if(url.pathname==='/api/admin/character-mappings'&&['GET','POST'].includes(request.method))return json(await mappingRoute(request,env));
       if(url.pathname==='/api/admin/overview'&&request.method==='GET')return json(await adminOverview(request,env));

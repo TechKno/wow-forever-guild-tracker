@@ -23,6 +23,9 @@ test('native storage applies migrations once, persists data and rolls back a fai
   cleanup(t,()=>DB.close());
   assert.equal((await DB.prepare('SELECT COUNT(*) n FROM __guild_migrations').first()).n,readdirSync(migrations).filter(name=>name.endsWith('.sql')).length);
   await DB.prepare('INSERT INTO state VALUES(?,?)').bind('persistent','value').run();
+  DB.raw.exec('CREATE TABLE binary_fixture(value BLOB)');
+  await DB.prepare('INSERT INTO binary_fixture(value) VALUES(?)').bind(new Uint8Array([1,2,3,255]).buffer).run();
+  assert.deepEqual(Array.from((await DB.prepare('SELECT value FROM binary_fixture').first()).value),[1,2,3,255]);
   await assert.rejects(DB.batch([DB.prepare('INSERT INTO state VALUES(?,?)').bind('rollback','value'),DB.prepare('INSERT INTO missing_table VALUES(1)')]));
   assert.equal(await DB.prepare("SELECT * FROM state WHERE key='rollback'").first(),null);
   DB.close();DB=openDatabase(filename,migrations);
@@ -100,6 +103,8 @@ test('native HTTP hosting preserves Worker membership/CSRF protections and enfor
   assert.equal((await request('/healthz',{headers:{Host:'attacker.example','X-Forwarded-Host':host}})).status,400);
   assert.equal((await request('/healthz',{headers:{'X-Forwarded-Host':'attacker.example','CF-Connecting-IP':'192.0.2.9'}})).status,200);
   assert.equal((await request('/api/hall/roles',{method:'POST',body:'x'.repeat(65537)})).status,413);
+  assert.equal((await request('/api/gallery',{method:'POST',body:'x'.repeat(65537)})).status,401,'Gallery-sized bodies reach the membership gate');
+  assert.equal((await request('/api/gallery',{method:'POST',body:'x'.repeat(1500001)})).status,413);
   const login=await request('/auth/login');assert.equal(login.status,303);assert(login.headers.getSetCookie().length>0);assert.equal(new URL(login.headers.get('location')).searchParams.get('redirect_uri'),CONFIG.site.origin+'/auth/callback');
   const id='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',token=random(),csrf='fixture-csrf',now=new Date().toISOString();
   await DB.prepare("UPDATE sync SET published='current' WHERE id=1").run();

@@ -67,7 +67,7 @@ test('public summary and health checks are read-only, and HEAD returns headers w
 });
 
 test('every private API fails anonymously before database queries, hydration, provider fetches or asset fallback',async()=>{
-  const f=await fixture(),paths=['/api','/api/me','/api/status','/api/members','/api/history?character=101','/api/recipe/100','/api/characters/101/talents','/api/crafters/100','/api/hall','/api/quests/areas','/api/evidence','/api/admin/status','/api/admin/discord','/api/admin/character-mappings','/api/admin/character-check?character=Secret','/api/admin/presence-capability','/api/admin/discord/channels','/api/public/','/api/unknown'];
+  const f=await fixture(),paths=['/api/gallery','/api/gallery/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/image','/api/gallery/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/thumbnail','/api/gallery/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/remove','/api/gallery/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/restore','/api','/api/me','/api/status','/api/members','/api/history?character=101','/api/recipe/100','/api/characters/101/talents','/api/crafters/100','/api/hall','/api/quests/areas','/api/evidence','/api/admin/status','/api/admin/discord','/api/admin/character-mappings','/api/admin/character-check?character=Secret','/api/admin/presence-capability','/api/admin/discord/channels','/api/public/','/api/unknown'];
   await withoutNetwork(async()=>{
     for(const path of paths)for(const method of ['GET','HEAD','POST']){
       const before=f.DB.queries.length,response=await worker.fetch(anonymous(path,{method}),f.env);assert.equal(response.status,401,path+' '+method);privateHeaders(response);assert.equal(f.DB.queries.length,before,path+' must not run endpoint queries');
@@ -112,7 +112,7 @@ test('private app aliases redirect anonymous users to Battle.net and signed nonm
 });
 
 test('direct private assets and unknown HTML cannot bypass the gate even if an asset binding falls back to the private app',async()=>{
-  const f=await fixture(),assetPaths=['/app.js','/hall.js','/adventures.js','/talents.js','/style.css','/talents.css','/assets/other.png','/index.html/','/unknown'];
+  const f=await fixture(),assetPaths=['/gallery.js','/gallery.css','/app.js','/hall.js','/adventures.js','/talents.js','/style.css','/talents.css','/assets/other.png','/index.html/','/unknown'];
   for(const path of assetPaths){const response=await worker.fetch(anonymous(path,{headers:{Accept:'text/html'}}),f.env);assert.equal(response.status,401,path);assert.equal(response.headers.get('Location'),null);const data=await response.json();assert.equal(data.access_required,true);assert(!JSON.stringify(data).includes(PRIVATE));}
   for(const path of ['/unknown.html','/INDEX.HTML','/guild%2findex.html']){
     const response=await worker.fetch(anonymous(path,{headers:{Accept:'text/html'}}),f.env);assert.equal(response.status,303);assert.equal(response.headers.get('Location'),'/auth/login');

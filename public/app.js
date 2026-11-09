@@ -95,7 +95,7 @@ function refreshDetails(member) {
 }
 
 function leaveGuild(){
-  window.dispatchEvent(new CustomEvent('guild-access-reset'));window.GuildArmory?.reset();window.GuildAccount?.reset();window.GuildAdminOverview?.reset();window.GuildHierarchy?.reset();
+  window.dispatchEvent(new CustomEvent('guild-access-reset'));window.GuildArmory?.reset();window.GuildAccount?.reset();window.GuildAdminOverview?.reset();window.GuildHierarchy?.reset();window.GuildGallery?.reset();
   document.body.textContent='';window.location.replace('/');
 }
 window.GuildAccess={leave:leaveGuild,check:(response,result)=>{if(response.status===401||result?.access_required===true){leaveGuild();return true;}return false;}};
@@ -110,6 +110,7 @@ const ROUTES={
   overview:{panel:'overview',title:'The guild noticeboard',label:'The noticeboard',eyebrow:'PULL UP A CHAIR',description:'Good company, useful crafts, and the next grand misadventure.'},
   account:{panel:'account',title:'Manage My Account',label:'Manage My Account',eyebrow:'YOUR PLACE AT THE TABLE',description:'Your characters, combat roles and connected accounts, all in one place.'},
   admin:{panel:'admin',title:'The keeper’s overview',label:'Admin overview',eyebrow:'THE KEEPER’S LEDGER',description:'Guild health, completed imports and the changes worth your attention.'},
+  gallery:{panel:'gallery',title:'The guild gallery',label:'Gallery',eyebrow:'TALES FROM OUR TRAVELS',description:'Screenshots, shared victories and the moments worth keeping.'},
   hierarchy:{panel:'hierarchy',title:'The guild hierarchy',label:'Guild hierarchy',eyebrow:'OUR COMPANY, IN ORDER',description:'The people of the guild, ordered by their in-game rank.'},
   roster:{panel:'roster',title:'The guild roster',label:'Guild roster',eyebrow:'THE COMPANY WE KEEP',description:'Every main, every alt, and the skills that make us a guild.'},
   events:{panel:'hall',pane:'events',title:'Events & adventures',label:'Events & adventures',eyebrow:'GATHER YOUR PARTY',description:'Find your next adventure. Choose a character, claim a role, and meet the guild.'},
@@ -175,6 +176,7 @@ function activate(view,pane) {
   if(view==='status'){if(!evidenceLoaded)loadEvidence();window.GuildAdventures?.admin();}
   if(view==='adventures')window.GuildAdventures?.load();
   if(view==='history')window.GuildHall?.history();
+  if(view==='gallery')window.GuildGallery?.load();
   if(view==='account')window.GuildAccount?.load();
   if(view==='admin')window.GuildAdminOverview?.load();
   if(view==='hierarchy'){window.GuildHierarchy?.update(members);window.GuildHierarchy?.load();window.GuildHall?.load();}

@@ -36,5 +36,12 @@ test('the expanded interface preview serves fictional armory, administrator hist
   const media=await get(url,{path:armory.sections.media.data.assets[0].url});assert.equal(media.status,200);assert.match(media.headers['content-type'],/image\/svg\+xml/);assert.match(media.body,/FICTIONAL DEMO PORTRAIT/);assert.doesNotMatch(media.body,/<script|(?:href|src)=["']https?:/);
   for(const path of ['/api/characters/999/armory','/api/characters/999/armory/media/main'])assert.equal((await get(url,{path})).status,404);
   for(const path of ['/api/admin/ranks','/api/admin/refresh','/api/hall/main','/api/hall/discord']){const result=await get(url,{path,method:'POST'});assert.equal(result.status,400);assert.match(result.body,/read-only/);}
-  for(const path of ['/account.js','/admin-overview.js','/armory.js','/hierarchy.js'])assert.equal((await get(url,{path})).status,200);
+  for(const path of ['/account.js','/admin-overview.js','/armory.js','/hierarchy.js','/gallery.js'])assert.equal((await get(url,{path})).status,200);
+}));
+
+test('gallery previews use clearly fictional illustrations and reject uploads or moderation',()=>preview(async({url})=>{
+  const gallery=JSON.parse((await get(url,{path:'/api/gallery'})).body);assert.equal(gallery.demo,true);assert.equal(gallery.items.length,3);
+  const image=await get(url,{path:gallery.items[0].thumbnail_url});assert.equal(image.status,200);assert.match(image.body,/FICTIONAL GALLERY PREVIEW/);assert.doesNotMatch(image.body,/<script|(?:href|src)=["']https?:/);
+  assert.deepEqual(JSON.parse((await get(url,{path:'/api/gallery?removed=1'})).body).items,[]);
+  for(const path of ['/api/gallery',`/api/gallery/${gallery.items[0].id}/remove`])assert.equal((await get(url,{path,method:'POST'})).status,400);
 }));

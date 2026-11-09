@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const expected={"guildName":"Example Guild","region":"EU","ruleset":"Roleplay"};
-  const routes=new Set(['overview','roster','hall','crafting','events','members','recipes','professions','history','adventures','status','wishlists','admin','account','hierarchy']);
+  const routes=new Set(['overview','roster','hall','crafting','events','members','recipes','professions','history','adventures','status','wishlists','admin','account','hierarchy','gallery']);
   const hash=window.location.hash;
   if(hash.startsWith('#')&&routes.has(hash.slice(1))){window.location.replace('/guild'+hash);return;}
   const $=id=>document.getElementById(id);

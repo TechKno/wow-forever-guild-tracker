@@ -12,6 +12,7 @@ The screenshots below use **fictional demo data**. No live guild members, accoun
 ![Guild noticeboard with fictional demo data](docs/screenshots/noticeboard.jpg)
 ![Roster with fictional demo data](docs/screenshots/roster.jpg)
 ![Crafting requests with fictional demo data](docs/screenshots/crafting.jpg)
+![Private guild gallery with fictional preview illustrations](docs/screenshots/gallery.jpg)
 
 <details>
 <summary>Account, administration, hierarchy and character armory previews</summary>
@@ -36,6 +37,7 @@ Screenshots are captured from the real interface using the isolated [demo previe
 ## Features
 
 - Private administrator overview with scheduler/provider health, account counts and completed roster-import history.
+- A [private guild gallery](docs/GALLERY.md) with member screenshot uploads, captions, full-size viewing and reversible owner/admin moderation.
 - Manage My Account for owned characters, main/alt grouping, combat roles and Discord preferences.
 - A centred guild hierarchy sorted by in-game rank, with editable suggested rank names.
 - Tabbed character cards with a compact armory, protected item icons and character artwork, talents, professions and data details; unavailable sections stay unknown.
