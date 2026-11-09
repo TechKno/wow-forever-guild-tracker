@@ -126,7 +126,7 @@ export async function authRoute(request,env){
         const guildIds=new Set(roster.results.filter(c=>!c.departed).map(c=>c.character_id));
         const departedIds=new Set(roster.results.filter(c=>c.departed).map(c=>c.character_id));
         const owned=ids.filter(id=>guildIds.has(id));
-        const proofs=[];
+        const proofs=[],scannedIds=new Set();
         const scanKey='ownership_scan:'+user.id;
         let scanNext=null;
         const guildRow=await env.DB.prepare("SELECT value FROM state WHERE key='guild'").first();
@@ -143,6 +143,7 @@ export async function authRoute(request,env){
             const saved=await env.DB.prepare('SELECT value FROM state WHERE key=?').bind(scanKey).first();
             const prior=Number(saved?.value),offset=Number.isSafeInteger(prior)&&prior>=0?prior%unknown.length:0;
             const selected=Array.from({length:Math.min(8,unknown.length)},(_,index)=>unknown[(offset+index)%unknown.length]);
+            for(const candidate of selected)scannedIds.add(candidate.id);
             scanNext=(offset+selected.length)%unknown.length;
             // No provider href or member-entered character is trusted for discovery.
             // Every candidate came from this sign-in's authenticated account summary.
@@ -158,10 +159,18 @@ export async function authRoute(request,env){
             }
           }
         }
+        const previous=await env.DB.prepare(`SELECT l.character_id,l.show_as_alt,f.guild_id,f.ruleset,f.checked_at,f.expires FROM character_links l
+          LEFT JOIN profile_members f ON f.character_id=l.character_id AND f.user_id=l.user_id WHERE l.user_id=?`).bind(user.id).all();
+        const returnedIds=new Set(ids),now=epoch();
+        // A bounded discovery pass must not forget a different alt's still-valid
+        // guild proof. Ownership must appear in this authenticated account reply;
+        // checked candidates, expired proofs and departures cannot be retained.
+        for(const prior of previous.results)if(returnedIds.has(prior.character_id)&&!guildIds.has(prior.character_id)&&!departedIds.has(prior.character_id)&&!scannedIds.has(prior.character_id)
+          &&prior.guild_id===knownGuild?.id&&knownGuild?.name===GUILD&&knownGuild?.ruleset===RULESET_LABEL&&prior.ruleset===3
+          &&prior.checked_at<=now&&prior.expires>now&&prior.expires-prior.checked_at===3600)owned.push(prior.character_id);
         if(owned.length>23)throw new WebError('More than 23 guild characters require review');
-        const previous=await env.DB.prepare('SELECT character_id,show_as_alt FROM character_links WHERE user_id=?').bind(user.id).all();
         const preferences=new Map(previous.results.map(r=>[r.character_id,r.show_as_alt]));
-        const statements=[env.DB.prepare('DELETE FROM profile_members WHERE user_id=?').bind(user.id),env.DB.prepare('DELETE FROM character_links WHERE user_id=?').bind(user.id)];
+        const statements=[env.DB.prepare('DELETE FROM profile_members WHERE user_id=? AND character_id NOT IN (SELECT value FROM json_each(?))').bind(user.id,JSON.stringify(owned)),env.DB.prepare('DELETE FROM character_links WHERE user_id=?').bind(user.id)];
         for(const id of owned)statements.push(env.DB.prepare(`INSERT INTO character_links(character_id,user_id,verified_at,show_as_alt) VALUES(?,?,?,?) ON CONFLICT(character_id) DO UPDATE SET user_id=excluded.user_id,verified_at=excluded.verified_at,show_as_alt=excluded.show_as_alt`).bind(id,user.id,created,preferences.get(id)??1));
         for(const proof of proofs)statements.push(profileMemberStatement(env,user.id,proof));
         if(proofs.length)statements.push(env.DB.prepare('INSERT OR IGNORE INTO character_refresh(character_id,next_at) SELECT character_id,0 FROM profile_members WHERE user_id=?').bind(user.id));

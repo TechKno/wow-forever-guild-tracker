@@ -43,18 +43,21 @@ export function demoFixtures(){
     [106,'Edda Moonbrook','Warlock',9,21,2,['Damage'],'Damage',[profession('Tailoring',197,65,[recipes.bag,recipes.bolt]),profession('Enchanting',333,48)]],
     [107,'Fenna Briarpath','Hunter',3,17,3,['Damage'],'Damage',[profession('Skinning',393,90),profession('Leatherworking',165,68)]],
     [108,'Dorrin Ironhand','Warrior',1,18,2,['Tank','Damage'],'Tank',[profession('Mining',186,81),profession('Blacksmithing',164,64,[recipes.stone])]],
-    [109,'Merrin Cloudspark','Mage',8,12,3,['Damage'],'Damage',[profession('Herbalism',182,46),profession('Alchemy',171,37,[recipes.potion])]]
+    [109,'Merrin Cloudspark','Mage',8,12,3,['Damage'],'Damage',[profession('Herbalism',182,46),profession('Alchemy',171,37,[recipes.potion])]],
+    [110,'Sable Willowmere','Priest',5,15,3,['Healer','Damage'],'Healer',[profession('Tailoring',197,48,[recipes.bag]),profession('Enchanting',333,32)]],
+    [111,'Rowan Copperleaf','Warrior',1,10,3,['Tank','Damage'],'Tank',[profession('Mining',186,35),profession('Blacksmithing',164,22,[recipes.stone])]]
   ];
   const members=rows.map(([id,name,klass,class_id,level,rank,preferred_roles,primary_role,professions],index)=>({id,name,slug:name.toLowerCase().replaceAll(' ','-'),class:klass,class_id,race:index%3===0?'Dwarf':index%3===1?'Human':'Night Elf',level,rank,
     preferred_roles,primary_role,role_preferences_updated_at:observedAt,roster_observed:observedAt,level_source:'character_profile',level_observed_at:observedAt,
     profile_at:observedAt,professions_at:observedAt,talents_at:observedAt,profile_status:'verified',professions_status:'verified',talents_status:'verified',
     professions:[...professions,profession('Cooking',185,35+index*6,[recipes.wolf,recipes.boar],'Secondary'),profession('First Aid',129,42+index*4,[],'Secondary')],
     talents:[{name:klass==='Druid'?'Restoration':'Adventurer build',points:level-9}]}));
-  const owners=new Map([[101,'brann'],[102,'liora'],[103,'orrin'],[104,'pippa'],[105,'tamsin'],[106,'edda'],[107,'fenna'],[108,'dorrin'],[109,'tamsin']]);
-  const links=members.map(member=>({character_id:member.id,user_id:'demo-'+owners.get(member.id),main_character_id:member.id===109?105:member.id}));
+  const owners=new Map([[101,'brann'],[102,'liora'],[103,'orrin'],[104,'pippa'],[105,'tamsin'],[106,'edda'],[107,'fenna'],[108,'dorrin'],[109,'tamsin'],[110,'tamsin'],[111,'tamsin']]);
+  const isAlt=id=>owners.get(id)==='tamsin'&&id!==105;
+  const links=members.map(member=>({character_id:member.id,user_id:'demo-'+owners.get(member.id),main_character_id:isAlt(member.id)?105:member.id}));
   const characters=members.filter(member=>owners.get(member.id)==='tamsin').map(member=>({...member,show_as_alt:member.id!==105}));
   const names={brann:'Oakshield',liora:'Liora',orrin:'Quietfoot',pippa:'Cogworks',tamsin:'moss.and.moon',edda:'Edda',fenna:'RangerFenna',dorrin:'Ironhand'};
-  const people=Object.entries(names).map(([owner,display_name])=>({key:('fictional-'+owner).padEnd(43,'_'),display_name,discord_linked:true,name_status:'observed',identity_source:'provider',own:owner==='tamsin',characters:members.filter(member=>owners.get(member.id)===owner).map(member=>({...member,is_main:member.id!==109,is_alt:member.id===109,association:'provider',own:owner==='tamsin',title:member.id===105?'Keeper of the herb garden':'',biography:member.id===105?'A healer, a collector of herbs, and an enthusiastic believer in bringing snacks.':'',looking_for:member.id===105?'Relaxed dungeon parties and crafting friends.':''}))}));
+  const people=Object.entries(names).map(([owner,display_name])=>({key:('fictional-'+owner).padEnd(43,'_'),display_name,discord_linked:true,name_status:'observed',identity_source:'provider',own:owner==='tamsin',characters:members.filter(member=>owners.get(member.id)===owner).map(member=>({...member,is_main:!isAlt(member.id),is_alt:isAlt(member.id),association:'provider',own:owner==='tamsin',title:member.id===105?'Keeper of the herb garden':'',biography:member.id===105?'A healer, a collector of herbs, and an enthusiastic believer in bringing snacks.':'',looking_for:member.id===105?'Relaxed dungeon parties and crafting friends.':''}))}));
   const starts=new Date();starts.setUTCDate(starts.getUTCDate()+1);starts.setUTCHours(21,0,0,0);
   const event={id:'demo-deadmines',title:'An evening in the Deadmines',kind:'Dungeon',status:'open',starts_at:starts.toISOString(),duration_minutes:120,capacity:5,location:'Moonbrook, Westfall',description:'A relaxed run, a few quests, and good company. New adventurers welcome.',host_name:'Brann Oakshield',character_id:101,own:false,
     signups:[{character_id:101,character_name:'Brann Oakshield',role:'Tank',source:'web',own:false},{character_id:105,character_name:'Tamsin Hearthwood',role:'Healer',source:'web',own:true}],role_limits:{Tank:1,Healer:1,Damage:3},pending_reactions:[]};

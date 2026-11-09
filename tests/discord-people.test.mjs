@@ -38,6 +38,12 @@ async function fixture(){
   return {DB,env,user:{id:'u1'},now};
 }
 const guildMember=(id,nick='Server Nick')=>({nick,user:{id,username:'account_name',global_name:'Global Name'}});
+async function staleMappingFixture(){
+  const f=await fixture();await f.DB.prepare('DELETE FROM discord_links WHERE user_id=?').bind('u1').run();await f.DB.prepare('DELETE FROM admin_discord_mappings').run();
+  for(const cid of [101,102,301,302])await f.DB.prepare('INSERT INTO admin_discord_mappings VALUES(?,?,?,?,?,?,?)').bind(cid,B,'manual',cid===301?1:0,1,'u1',f.now).run();
+  for(const cid of [101,102,301,302])await f.DB.prepare('UPDATE characters SET data=? WHERE id=?').bind(JSON.stringify({professions_status:'verified',professions:[{recipes:[{id:77,name:'Fixture Recipe'}]}]}),cid).run();
+  await cacheDiscordProfile(f.env,B,guildMember(B,'Person With Several Alts'));return f;
+}
 
 test('Discord names use server nickname, global name, then username without inventing one',()=>{
   assert.equal(discordDisplayName({nickname:' Server ',global_name:'Global',username:'User'}),'Server');
@@ -70,6 +76,52 @@ test('directory-only account grouping includes unmapped verified characters with
   assert.equal(person.identity_source,'admin');assert(!(await activeManualMappings(f.env)).some(row=>row.character_id===102));
   assert.deepEqual((await notificationCrafters(f.env,77)).map(row=>row.character_id),[101]);
   assert.equal((await f.DB.prepare('SELECT user_id FROM character_links WHERE character_id=102').first()).user_id,'u1');
+});
+test('compatible old administrator assignments keep one main and three mixed characters together after provider sign-in without migrating authority',async()=>{
+  const f=await staleMappingFixture(),mappings=(await f.DB.prepare('SELECT * FROM admin_discord_mappings ORDER BY character_id').all()).results,links=(await f.DB.prepare('SELECT * FROM character_links ORDER BY character_id').all()).results;
+  assert.deepEqual((await activeManualMappings(f.env)).map(row=>row.character_id),[301,302]);assert.deepEqual((await notificationCrafters(f.env,77)).map(row=>row.character_id),[301,302]);
+  const people=await memberDirectory(f.env,f.user),owner=people.find(person=>person.characters.some(character=>character.id===101));
+  assert.equal(owner.display_name,'Person With Several Alts');assert.equal(owner.identity_source,'admin');assert.deepEqual(owner.characters.map(character=>character.id).sort((a,b)=>a-b),[101,102,301,302]);
+  assert(owner.characters.find(character=>character.id===101).is_main);assert(owner.characters.find(character=>character.id===102).is_alt);
+  assert(owner.characters.filter(character=>[101,102].includes(character.id)).every(character=>character.association==='provider'&&character.own));
+  assert(owner.characters.filter(character=>[301,302].includes(character.id)).every(character=>character.association==='admin'&&!character.own&&!character.is_main&&!character.is_alt));
+  assert.deepEqual(rosterDisplayGroups([owner])[0].character_ids.slice().sort((a,b)=>a-b),[101,102,301,302]);
+  assert.deepEqual((await activeManualMappings(f.env)).map(row=>row.character_id),[301,302]);assert.deepEqual((await notificationCrafters(f.env,77)).map(row=>row.character_id),[301,302]);
+  assert.deepEqual((await f.DB.prepare('SELECT * FROM admin_discord_mappings ORDER BY character_id').all()).results,mappings);assert.deepEqual((await f.DB.prepare('SELECT * FROM character_links ORDER BY character_id').all()).results,links);
+  assert(!JSON.stringify(people).includes(B));
+});
+test('a verified account can show a main and three provider-owned alts with stale manual actors without limiting or replacing characters',async()=>{
+  const f=await staleMappingFixture();for(const cid of [301,302])await f.DB.prepare('INSERT INTO character_links(character_id,user_id,verified_at,show_as_alt) VALUES(?,?,?,?)').bind(cid,'u1',f.now,1).run();
+  const owner=(await memberDirectory(f.env,f.user)).find(person=>person.characters.some(character=>character.id===101));
+  assert.equal(owner.characters.length,4);assert.equal(owner.characters.filter(character=>character.is_main).length,1);assert.equal(owner.characters.filter(character=>character.is_alt).length,3);assert(owner.characters.every(character=>character.association==='provider'&&character.own));
+  assert.equal((await activeManualMappings(f.env)).length,0);assert.equal((await notificationCrafters(f.env,77)).length,0,'Presentation cannot restore authority for any stale mapping');
+});
+test('personal Discord authorisation keeps exact virtual-actor manual characters visible without granting them account ownership or notification authority',async()=>{
+  const f=await staleMappingFixture();await f.DB.prepare('INSERT INTO discord_links(user_id,discord_id,linked_at) VALUES(?,?,?)').bind('u1',B,f.now).run();
+  const before=(await f.DB.prepare('SELECT * FROM admin_discord_mappings ORDER BY character_id').all()).results,owner=(await memberDirectory(f.env,f.user)).find(person=>person.characters.some(character=>character.id===101));
+  assert.deepEqual(owner.characters.map(character=>character.id).sort((a,b)=>a-b),[101,102,301,302]);assert.equal(owner.identity_source,'mixed');
+  assert(owner.characters.filter(character=>[301,302].includes(character.id)).every(character=>character.association==='admin'&&!character.own&&!character.is_main&&!character.is_alt));
+  assert.equal((await activeManualMappings(f.env)).length,0);assert.equal((await notificationCrafters(f.env,77)).length,0);assert.deepEqual((await f.DB.prepare('SELECT * FROM admin_discord_mappings ORDER BY character_id').all()).results,before);
+  assert.equal((await f.DB.prepare('SELECT COUNT(*) count FROM character_links WHERE user_id=?').bind('u1').first()).count,2);
+});
+test('an exact manual-only assignment can join a personally linked current provider account without a provider mapping on its main',async()=>{
+  const f=await staleMappingFixture();await f.DB.prepare('DELETE FROM admin_discord_mappings WHERE character_id IN (101,102)').run();await f.DB.prepare('INSERT INTO discord_links(user_id,discord_id,linked_at) VALUES(?,?,?)').bind('u1',B,f.now).run();
+  const owner=(await memberDirectory(f.env,f.user)).find(person=>person.characters.some(character=>character.id===101));assert.deepEqual(owner.characters.map(character=>character.id).sort((a,b)=>a-b),[101,102,301,302]);assert(owner.characters.filter(character=>[301,302].includes(character.id)).every(character=>!character.own&&character.association==='admin'));
+  assert.equal((await activeManualMappings(f.env)).length,0);
+});
+test('display reconciliation rejects personal Discord, competing provider owners, ambiguous assignments and non-virtual actor conflicts',async()=>{
+  const scenarios=[
+    async f=>f.DB.prepare("UPDATE users SET ownership_status='verified' WHERE id='manual'").run(),
+    async f=>f.DB.prepare('INSERT INTO discord_links(user_id,discord_id,linked_at) VALUES(?,?,?)').bind('u1',A,f.now).run(),
+    async f=>f.DB.prepare('INSERT INTO discord_links(user_id,discord_id,linked_at) VALUES(?,?,?)').bind('u2',B,f.now).run(),
+    async f=>f.DB.prepare('INSERT INTO admin_discord_mappings VALUES(?,?,?,?,?,?,?)').bind(201,B,'manual',0,0,'u1',f.now).run(),
+    async f=>f.DB.prepare('UPDATE admin_discord_mappings SET discord_id=? WHERE character_id=102').bind(A).run(),
+    async f=>f.DB.prepare('INSERT INTO discord_links(user_id,discord_id,linked_at) VALUES(?,?,?)').bind('manual',A,f.now).run()
+  ];
+  for(const change of scenarios){
+    const f=await staleMappingFixture();await change(f);const owner=(await memberDirectory(f.env,f.user)).find(person=>person.characters.some(character=>character.id===101));
+    assert(!owner.characters.some(character=>[201,301,302].includes(character.id)),'A conflicting assignment must not absorb another account or manual-only characters');assert.equal(owner.characters.filter(character=>character.association==='provider').length,2);
+  }
 });
 test('ambiguous administrator Discord accounts do not absorb an unmapped verified character',async()=>{
   const f=await fixture();await f.DB.prepare('DELETE FROM discord_links WHERE user_id=?').bind('u1').run();

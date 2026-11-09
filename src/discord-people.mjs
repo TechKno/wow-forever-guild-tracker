@@ -32,16 +32,46 @@ async function verifiedRows(env){
     LEFT JOIN character_profiles p ON p.character_id=l.character_id AND p.user_id=l.user_id
     WHERE u.ownership_status='verified' ORDER BY m.slug`).all()).results;
 }
+async function displayManualMappings(env,providers,active){
+  const rows=(await env.DB.prepare(`SELECT a.*,m.data roster,c.data details,u.ownership_status participant_status,l.user_id provider_owner,
+    d.user_id discord_owner,du.discord_id provider_discord,da.discord_id participant_discord
+    FROM admin_discord_mappings a JOIN verified_membership m ON m.character_id=a.character_id AND m.generation=(SELECT published FROM sync WHERE id=1)
+    JOIN users u ON u.id=a.participant_user_id LEFT JOIN characters c ON c.id=a.character_id LEFT JOIN character_links l ON l.character_id=a.character_id
+    LEFT JOIN discord_links d ON d.discord_id=a.discord_id LEFT JOIN discord_links du ON du.user_id=l.user_id LEFT JOIN discord_links da ON da.user_id=a.participant_user_id`).all()).results;
+  const owners=new Map(providers.map(row=>[row.character_id,row.user_id])),providerUsers=new Set(providers.map(row=>row.user_id)),personalDiscords=new Map(providers.filter(row=>snowflake(row.discord_id)).map(row=>[row.user_id,row.discord_id])),ownersByDiscord=new Map(),discordsByOwner=new Map();
+  for(const row of rows)if(row.provider_owner&&snowflake(row.discord_id)){
+    if(!ownersByDiscord.has(row.discord_id))ownersByDiscord.set(row.discord_id,new Set());ownersByDiscord.get(row.discord_id).add(row.provider_owner);
+    if(!discordsByOwner.has(row.provider_owner))discordsByOwner.set(row.provider_owner,new Set());discordsByOwner.get(row.provider_owner).add(row.discord_id);
+  }
+  const result=[...active],included=new Set(active.map(row=>row.character_id));
+  for(const row of rows){
+    if(included.has(row.character_id)||row.participant_status!=='admin_mapped'||!snowflake(row.discord_id))continue;
+    const mappedOwners=ownersByDiscord.get(row.discord_id),linkedOwner=providerUsers.has(row.discord_owner)?row.discord_owner:null;
+    const owner=row.provider_owner?owners.get(row.character_id):linkedOwner||(mappedOwners?.size===1?[...mappedOwners][0]:null);
+    if(!providerUsers.has(owner)||row.provider_owner&&owner!==row.provider_owner)continue;
+    if(mappedOwners&&(mappedOwners.size!==1||!mappedOwners.has(owner)))continue;
+    const assignments=discordsByOwner.get(owner);
+    if(assignments&&(assignments.size!==1||!assignments.has(row.discord_id)))continue;
+    const personal=personalDiscords.get(owner);
+    if(row.discord_owner&&row.discord_owner!==owner||personal&&personal!==row.discord_id||row.provider_discord&&row.provider_discord!==row.discord_id||row.participant_discord&&row.participant_discord!==row.discord_id)continue;
+    // The exact administrator assignment remains useful for presentation after provider sign-in.
+    // Its original actor and notification authority stay unchanged until explicitly reconciled.
+    result.push({...row,display_owner_id:owner});included.add(row.character_id);
+  }
+  return result;
+}
 export async function memberDirectory(env,user,directory=null,rolePreferences=null){
   rolePreferences??=await currentRolePreferences(env);
-  const config=await discordConfig(env),[providers,manual,profiles]=await Promise.all([
+  const config=await discordConfig(env),[providers,active,profiles]=await Promise.all([
     verifiedRows(env),activeManualMappings(env),env.DB.prepare('SELECT * FROM discord_profiles WHERE guild_id=?').bind(config.guild_id).all()
   ]);
+  const manual=await displayManualMappings(env,providers,active);
   const cached=new Map(profiles.results.map(p=>[p.discord_id,p])),existing=new Map((directory||[]).map(c=>[c.id,c])),manualByCharacter=new Map(manual.map(m=>[m.character_id,m])),groups=new Map(),providerCharacters=new Set(),mains=effectivePlayerMains(providers);
   // Directory grouping may describe an account's verified characters. It does not create notification or event authority for them.
   const providerUsers=new Set(providers.map(row=>row.user_id)),assignedAccounts=new Map();
-  for(const row of manual)if(providerUsers.has(row.participant_user_id)&&snowflake(row.discord_id)){
-    if(!assignedAccounts.has(row.participant_user_id))assignedAccounts.set(row.participant_user_id,new Set());assignedAccounts.get(row.participant_user_id).add(row.discord_id);
+  for(const row of manual){
+    const owner=row.display_owner_id||row.participant_user_id;if(!providerUsers.has(owner)||!snowflake(row.discord_id))continue;
+    if(!assignedAccounts.has(owner))assignedAccounts.set(owner,new Set());assignedAccounts.get(owner).add(row.discord_id);
   }
   function add(key,did,character,association,participant){
     if(!groups.has(key))groups.set(key,{discord_id:did,characters:[],sources:new Set(),own:false});
@@ -51,7 +81,7 @@ export async function memberDirectory(env,user,directory=null,rolePreferences=nu
   for(const row of providers){
     const roster=JSON.parse(row.roster),details=row.details?JSON.parse(row.details):{},assigned=manualByCharacter.get(roster.id);
     const accountIds=assignedAccounts.get(row.user_id),accountDiscord=accountIds?.size===1?[...accountIds][0]:null;
-    const personal=snowflake(row.discord_id)?row.discord_id:null,did=personal||(assigned?.participant_user_id===row.user_id&&snowflake(assigned.discord_id)?assigned.discord_id:null)||accountDiscord;
+    const personal=snowflake(row.discord_id)?row.discord_id:null,did=personal||((assigned?.display_owner_id||assigned?.participant_user_id)===row.user_id&&snowflake(assigned.discord_id)?assigned.discord_id:null)||accountDiscord;
     const char={...mergeMember(roster,details),...existing.get(roster.id),is_main:mains.get(row.user_id)===roster.id,is_alt:Boolean(row.show_as_alt)&&mains.get(row.user_id)!==roster.id,
       title:row.title||'',biography:row.biography||'',looking_for:row.looking_for||'',own:row.user_id===user.id,association:'provider'};
     providerCharacters.add(roster.id);add(did?'discord:'+did:'account:'+row.user_id,did,char,personal?'provider':did?'admin':'provider',row.user_id);
@@ -77,9 +107,10 @@ export async function memberDirectory(env,user,directory=null,rolePreferences=nu
 export async function refreshOneDiscordProfile(env){
   if(!await discordReady(env))return {processed:false};
   const pause=await state(env,'discord_pause');if(pause?.until>epoch())return {processed:false,paused:true};
-  const config=await discordConfig(env),[providers,manual,profiles]=await Promise.all([
+  const config=await discordConfig(env),[providers,active,profiles]=await Promise.all([
     verifiedRows(env),activeManualMappings(env),env.DB.prepare('SELECT * FROM discord_profiles WHERE guild_id=? ORDER BY next_at,discord_id').bind(config.guild_id).all()
   ]);
+  const manual=await displayManualMappings(env,providers,active);
   const ids=new Set([...providers.map(r=>r.discord_id),...manual.map(r=>r.discord_id)].filter(snowflake)),cached=new Map(profiles.results.map(r=>[r.discord_id,r]));
   const missing=[...ids].filter(id=>!cached.has(id)).slice(0,25);
   if(missing.length)await env.DB.batch(missing.map(id=>env.DB.prepare('INSERT OR IGNORE INTO discord_profiles(guild_id,discord_id) VALUES(?,?)').bind(config.guild_id,id)));

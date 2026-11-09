@@ -99,3 +99,14 @@ test('a successful main save queues shared refresh even when its following accou
  assert.equal(writes(p).length,1);assert(p.events.some(event=>event.type==='guild-account-saved'&&event.detail.user_id==='account-a'));assert.match(p.feedback.textContent,/saved.*could not be refreshed/i);assert.doesNotMatch(p.feedback.textContent,/sensitive-provider-detail/);
  p.api.render({...p.state.session});assert.match(p.root.innerHTML,/<option value="2" selected/);assert.match(p.root.innerHTML,/name="alt_id" value="1" checked/);
 });
+
+test('one main and three selected alts render and save together without truncating any alt',async()=>{
+ const characters=[character(1),character(2),character(3,{show_as_alt:true}),character(4,{show_as_alt:true})],p=fixture(session({characters}));
+ for(const id of [2,3,4])assert.match(p.root.innerHTML,new RegExp('name="alt_id" value="'+id+'" checked'));
+ assert.match(p.root.innerHTML,/Choose one main and any number of your verified alts/);assert.match(p.root.innerHTML,/Missing an alt\? <a href="\/auth\/login">Recheck Battle.net access<\/a>/);
+ assert.equal((p.root.innerHTML.match(/>LINKED ALT<\/span>/g)||[]).length,3);
+ const f=form('main',{main:1,alts:[2,3,4],ids:[1,2,3,4]});p.change(f);await p.submit(f);
+ assert.deepEqual(JSON.parse(writes(p)[0].options.body),{character_id:1,alt_ids:[2,3,4]});
+ for(const id of [2,3,4])assert.match(p.root.innerHTML,new RegExp('name="alt_id" value="'+id+'" checked'));
+ const links=p.events.find(event=>event.type==='guild-players').detail;assert.deepEqual(links.map(link=>link.character_id),[1,2,3,4]);assert(links.every(link=>link.main_character_id===1));
+});

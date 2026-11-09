@@ -219,3 +219,44 @@ test('the existing23-character bound with eight fallback proofs stays within the
   const result=await signIn(f,{characters:[...known,...newcomers],profiles});
   assert.equal(result.user.verified,true);assert.equal(result.user.characters.length,23);assert(f.DB.queries<=50,'OAuth and ownership commit should fit the free50-query invocation budget');
 });
+
+test('one main and three alts are imported from every WoW account and retained across sign-ins',async()=>{
+  const f=await fixture(),alts=Array.from({length:3},(_,i)=>({id:72+i,name:'Alt',surname:'Fixture'+String.fromCharCode(97+i)}));
+  for(const c of alts)await f.DB.prepare('INSERT INTO membership VALUES(?,?,?,?)').bind('current','alt-'+c.surname.toLowerCase(),c.id,JSON.stringify({id:c.id,name:c.name+' '+c.surname,slug:'alt-'+c.surname.toLowerCase(),level:5})).run();
+  const account={wow_accounts:[{characters:[{id:71},alts[0]]},{characters:alts.slice(1)}]};
+  const first=await signIn(f,{account});assert.equal(first.user.verified,true);
+  assert.deepEqual(first.user.characters.map(c=>c.id).sort(),[71,72,73,74]);
+  assert(first.user.characters.filter(c=>c.id!==71).every(c=>c.show_as_alt));
+  const second=await signIn(f,{account});assert.deepEqual(second.user.characters.map(c=>c.id).sort(),[71,72,73,74]);
+});
+
+test('rotating fallback discovery accumulates all verified alts without extending unscanned proofs',async()=>{
+  const f=await fixture(),alts=Array.from({length:12},(_,i)=>({id:91+i,name:'Alt',surname:'Fixture'+String.fromCharCode(97+i)}));
+  const profiles=new Map(alts.map(c=>[('alt-'+c.surname).toLowerCase(),{...profile,...c,slug:('alt-'+c.surname).toLowerCase()}]));
+  const characters=[{id:71},...alts],first=await signIn(f,{characters,profiles});
+  assert.equal(first.user.characters.length,9);
+  const preserved=await f.DB.prepare('SELECT * FROM profile_members WHERE character_id=95').first();
+  await f.DB.prepare('UPDATE character_links SET show_as_alt=0 WHERE character_id=95').run();
+  const second=await signIn(f,{characters,profiles});
+  assert.deepEqual(second.user.characters.map(c=>c.id).sort((a,b)=>a-b),[71,...alts.map(c=>c.id)]);
+  assert.equal(second.user.characters.find(c=>c.id===95).show_as_alt,false,'An explicitly separate character stays separate');
+  assert.deepEqual(await f.DB.prepare('SELECT * FROM profile_members WHERE character_id=95').first(),preserved,'An unscanned proof keeps its original expiry');
+  assert.equal(second.calls.filter(c=>new URL(c.url).pathname.startsWith('/profile/wow/character/')).length,8);
+});
+
+test('rotation cannot retain alts with missing ownership, expired proof, departure or a negative new check',async()=>{
+  for(const reason of ['missing','expired','departed','negative']){
+    const f=await fixture(),alts=Array.from({length:12},(_,i)=>({id:91+i,name:'Alt',surname:'Fixture'+String.fromCharCode(97+i)}));
+    const profiles=new Map(alts.map(c=>[('alt-'+c.surname).toLowerCase(),{...profile,...c,slug:('alt-'+c.surname).toLowerCase()}]));
+    await signIn(f,{characters:[{id:71},...alts],profiles});
+    const id=reason==='negative'?91:95;
+    if(reason==='expired')await f.DB.prepare('UPDATE profile_members SET checked_at=unixepoch()-3601,expires=unixepoch()-1 WHERE character_id=?').bind(id).run();
+    if(reason==='departed')await f.DB.prepare('INSERT INTO membership_departures VALUES(?,?,?)').bind(id,'alt-fixturee',new Date().toISOString()).run();
+    if(reason==='negative')profiles.set('alt-fixturea',{...profiles.get('alt-fixturea'),guild:{id:19,name:'Other Guild'}});
+    const result=await signIn(f,{characters:[{id:71},...alts.filter(c=>reason!=='missing'||c.id!==id)],profiles});
+    assert(!result.user.characters.some(c=>c.id===id),'Unverified alt must not remain: '+reason);
+    if(reason==='expired')assert(!result.calls.some(c=>new URL(c.url).pathname.endsWith('/alt-fixturee')),'Expired proof was outside the checked batch');
+    assert.equal(await f.DB.prepare('SELECT character_id FROM profile_members WHERE character_id=?').bind(id).first(),null);
+    assert.equal(await f.DB.prepare('SELECT character_id FROM character_links WHERE character_id=?').bind(id).first(),null);
+  }
+});

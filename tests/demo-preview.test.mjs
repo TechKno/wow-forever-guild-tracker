@@ -9,7 +9,7 @@ test('the screenshot preview binds only loopback, labels fictional pages and ser
   const page=await get(url,{path:'/guild'});assert.equal(page.status,200);assert.match(page.body,/Demo data · Fictional characters and activity · Read-only preview/);assert.match(page.body,/\/demo.css/);
   const roster=JSON.parse((await get(url,{path:'/api/members'})).body);assert(roster.members.length>=8);assert.equal(roster.demo,true);
   assert(roster.members.every(member=>member.preferred_roles.includes(member.primary_role)));
-  const me=JSON.parse((await get(url,{path:'/api/me'})).body);assert.equal(me.user_id,'demo-tamsin');assert.equal(me.is_admin,true);assert.equal(me.demo,true);assert.equal(me.csrf,'demo-read-only');assert(me.characters.length>=2);assert.equal(me.discord.linked,true);
+  const me=JSON.parse((await get(url,{path:'/api/me'})).body);assert.equal(me.user_id,'demo-tamsin');assert.equal(me.is_admin,true);assert.equal(me.demo,true);assert.equal(me.csrf,'demo-read-only');assert.equal(me.characters.length,4);assert.equal(me.characters.filter(c=>c.show_as_alt).length,3);assert.equal(me.discord.linked,true);
   const hall=JSON.parse((await get(url,{path:'/api/hall'})).body);assert(hall.events.length);assert(hall.requests.some(request=>request.materials?.components?.length));assert(hall.people.some(person=>person.display_name==='moss.and.moon'));
   const denied=await get(url,{path:'/api/hall/roles',method:'POST'});assert.equal(denied.status,400);assert.match(denied.body,/read-only/);
   assert.deepEqual(JSON.parse((await get(url,{path:'/api/members'})).body),roster,'A rejected write must not alter demo data');
@@ -30,7 +30,7 @@ test('demo requests do not read provider credentials or invoke provider fetches'
   finally{globalThis.fetch=originalFetch;prior===undefined?delete process.env.BLIZZARD_CLIENT_SECRET:process.env.BLIZZARD_CLIENT_SECRET=prior;}
 });
 test('the expanded interface preview serves fictional armory, administrator history and rank fixtures while every write remains disabled',()=>preview(async({url})=>{
-  const admin=JSON.parse((await get(url,{path:'/api/admin/overview'})).body);assert.equal(admin.counts.characters,9);assert(admin.imports.some(row=>row.left>0));assert(admin.imports.some(row=>row.joined>0));assert.match(admin.import_history_note,/Fictional/);
+  const admin=JSON.parse((await get(url,{path:'/api/admin/overview'})).body),roster=JSON.parse((await get(url,{path:'/api/members'})).body);assert.equal(admin.counts.characters,roster.members.length);assert(admin.imports.some(row=>row.left>0));assert(admin.imports.some(row=>row.joined>0));assert.match(admin.import_history_note,/Fictional/);
   const ranks=JSON.parse((await get(url,{path:'/api/guild/ranks'})).body);assert.equal(ranks.labels[0],'Guildmaster');assert.equal(ranks.ranks.length,10);
   const armory=JSON.parse((await get(url,{path:'/api/characters/105/armory'})).body);assert.equal(armory.character_id,105);assert(armory.sections.equipment.data.items.length>=4);assert(armory.sections.statistics.data.values.length>=4);assert.match(armory.note,/fictional/);
   const media=await get(url,{path:armory.sections.media.data.assets[0].url});assert.equal(media.status,200);assert.match(media.headers['content-type'],/image\/svg\+xml/);assert.match(media.body,/FICTIONAL DEMO PORTRAIT/);assert.doesNotMatch(media.body,/<script|(?:href|src)=["']https?:/);

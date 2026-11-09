@@ -203,7 +203,7 @@ document.addEventListener('keydown',event=>{
 window.addEventListener('resize',()=>{if(!navigationOpen||window.innerWidth>960)setNavigation(false);});
 window.addEventListener('hashchange',()=>activate(location.hash.slice(1)||'overview'));
 window.addEventListener('guild-hall-pane',event=>{if(ROUTES[currentView]?.panel==='hall'&&currentPane!==event.detail)activate('hall',event.detail);});
-window.addEventListener('guild-hall-data',event=>{overviewHall=memberVerified&&event.detail?event.detail:null;rosterDisplayGroups=memberVerified&&Array.isArray(event.detail?.display_groups)?event.detail.display_groups:[];renderPrivateOverview();if(status)renderRoster();});
+window.addEventListener('guild-hall-data',event=>{const before=rosterExpansionKeys();overviewHall=memberVerified&&event.detail?event.detail:null;rosterDisplayGroups=memberVerified&&Array.isArray(event.detail?.display_groups)?event.detail.display_groups:[];preserveRosterExpansion(before);renderPrivateOverview();if(status)renderRoster();});
 window.addEventListener('guild-member',event=>{const wasVerified=memberVerified;memberVerified=Boolean(event.detail?.verified);if(!memberVerified)overviewHall=null;renderPrivateOverview();if(memberVerified&&!wasVerified&&currentView==='overview')window.GuildHall?.load();if(memberVerified&&currentView==='hierarchy')window.GuildHall?.load();});
 
 function deriveRecipes() {
@@ -270,6 +270,23 @@ window.addEventListener('guild-role-saved',event=>{
   members=members.map(member=>member.id===value.character_id?{...member,...rolePreference(value),role_preferences_updated_at:value.role_preferences_updated_at||null}:member);
   if(status){renderRoster();renderCompositions();refreshOpenMember();}
 });
+// Group identity can become more specific once the Discord directory arrives.
+// Carry the user's open/closed state between those presentation keys without
+// changing the membership or ownership resolver, or turning grouping back on.
+function rosterExpansionKeys(){
+  const links=new Map(rosterLinks.map(link=>[link.character_id,link])),people=new Map();
+  for(const person of rosterDisplayGroups){
+    if(typeof person?.key!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(person.key)||!Array.isArray(person.character_ids))continue;
+    for(const id of person.character_ids)if(Number.isSafeInteger(id)&&id>0)people.set(id,person.key);
+  }
+  return new Map(members.map(member=>[member.id,people.has(member.id)?'person:'+people.get(member.id):links.has(member.id)?'player:'+links.get(member.id).user_id:'character:'+member.id]));
+}
+function preserveRosterExpansion(before){
+  const after=rosterExpansionKeys(),currentKeys=new Set(after.values()),retired=new Set(),carry=new Set();
+  for(const [id,oldKey]of before){const newKey=after.get(id);if(!newKey||newKey===oldKey)continue;retired.add(oldKey);if(expandedPlayers.has(oldKey)&&!newKey.startsWith('character:'))carry.add(newKey);}
+  for(const oldKey of retired)if(!currentKeys.has(oldKey))expandedPlayers.delete(oldKey);
+  for(const newKey of carry)expandedPlayers.add(newKey);
+}
 function renderRoster() {
   const query=$('roster-search').value.toLowerCase().trim(),classFilter=$('class-filter').value,sort=$('sort').value;
   const roleFilter=roleChoices.includes($('role-filter').value)?$('role-filter').value:'';
@@ -298,7 +315,7 @@ function renderRoster() {
     const observedCount=group.characters.filter(c=>c.profile_status==='verified').length;
     const classes=[...new Set(alts.map(a=>a.class))].join(', ');
     const toggle=!roleFilter||alts.length?`<button class="alt-toggle" data-player="${escapeHTML(group.key)}" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} alts for ${escapeHTML(m.name)}">${open?'▾':'▸'}</button>`:'';
-    return `<tr class="player-roster-row"><td>${personLabel(group.display_name)}${toggle}<span class="avatar" aria-hidden="true">${escapeHTML(m.name[0]||'?')}</span>${memberButton(m)}<small class="alt-marker">Main · ${group.characters.length} linked characters${roleFilter&&!matches(m)?' · matching alt below':''}</small></td><td>${classLabel(m)}${roleBadges(m,true)}${classes?`<small class="alt-marker">Alts: ${escapeHTML(classes)}</small>`:''}</td><td>${escapeHTML(m.level??'—')}</td><td>${m.rank!=null?'Rank '+escapeHTML(m.rank):'Unknown'}</td><td><div class="combined-professions">${professionTags(group.characters)||'<span class="subtle">No primary professions returned</span>'}</div></td><td><span class="badge">${observedCount} / ${group.characters.length} observed</span></td></tr>${open?alts.map(a=>singleRow(a,true)).join(''):''}`;
+    return `<tr class="player-roster-row"><td>${personLabel(group.display_name)}${toggle}<span class="avatar" aria-hidden="true">${escapeHTML(m.name[0]||'?')}</span>${memberButton(m)}<small class="alt-marker">Main · ${group.characters.length} linked characters · ${group.characters.length-1} ${group.characters.length===2?'alt':'alts'}${roleFilter&&!matches(m)?' · matching alt below':''}</small></td><td>${classLabel(m)}${roleBadges(m,true)}${classes?`<small class="alt-marker">Alts: ${escapeHTML(classes)}</small>`:''}</td><td>${escapeHTML(m.level??'—')}</td><td>${m.rank!=null?'Rank '+escapeHTML(m.rank):'Unknown'}</td><td><div class="combined-professions">${professionTags(group.characters)||'<span class="subtle">No primary professions returned</span>'}</div></td><td><span class="badge">${observedCount} / ${group.characters.length} observed</span></td></tr>${open?alts.map(a=>singleRow(a,true)).join(''):''}`;
   }).join('');
   $('roster-empty').hidden=rows.length>0;
   if(!rows.length&&members.length)$('roster-empty').innerHTML='<h3>No members match those filters.</h3><p>Try another name, class or role. Searches include linked alts.</p>';
@@ -312,7 +329,7 @@ function renderRoster() {
   if(grouped&&sort==='level')$('grouping-note').textContent+=' Groups sort by shown main level; alts stay under their main.';
   if(roleFilter)$('grouping-note').textContent+=` Includes primary and additional ${roleFilter} choices.${grouped?' Matching alts are shown under their main; other alts are hidden.':''}`;
 }
-window.addEventListener('guild-players',event=>{rosterLinks=event.detail||[];if(status){updateSummary();renderRoster();}});
+window.addEventListener('guild-players',event=>{const before=rosterExpansionKeys();rosterLinks=event.detail||[];preserveRosterExpansion(before);if(status){updateSummary();renderRoster();}});
 document.addEventListener('click',event=>{
   const toggle=event.target.closest('[data-player]');if(!toggle)return;
   const key=toggle.dataset.player;expandedPlayers.has(key)?expandedPlayers.delete(key):expandedPlayers.add(key);renderRoster();
