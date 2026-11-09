@@ -13,6 +13,7 @@ The screenshots below use **fictional demo data**. No live guild members, accoun
 ![Roster with fictional demo data](docs/screenshots/roster.jpg)
 ![Crafting requests with fictional demo data](docs/screenshots/crafting.jpg)
 ![Private guild gallery with fictional preview illustrations](docs/screenshots/gallery.jpg)
+![Dungeon and raid suggestions with fictional signed-in member data](docs/screenshots/events.jpg)
 
 <details>
 <summary>Account, administration, hierarchy and character armory previews</summary>
@@ -47,6 +48,7 @@ Screenshots are captured from the real interface using the isolated [demo previe
 - Character talent details, profession skills, observed recipes and crafting materials, including known component recipes.
 - Craft requests with selected crafters, optional Discord DMs, a fallback channel and completion reactions.
 - Dungeon/event planning, party roles, Discord announcements and cleanup of completed/cancelled posts.
+- Searchable [dungeon and raid suggestions](docs/EVENT-TEMPLATES.md) with editable group sizes, role places and sourced level guidance; upcoming content and unverified requirements are labelled.
 - Dated character changes and individual recipe observations; identical refreshes do not clutter the log.
 - Chronicle entries include verified roster level-ups and newly observed members, even when character profiles are unavailable. Dates are observation times, not exact in-game level-up or join times.
 - Discord display names, administrator-managed character mappings and member roleplay profiles.

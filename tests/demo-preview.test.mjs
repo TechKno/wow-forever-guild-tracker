@@ -45,3 +45,10 @@ test('gallery previews use clearly fictional illustrations and reject uploads or
   assert.deepEqual(JSON.parse((await get(url,{path:'/api/gallery?removed=1'})).body).items,[]);
   for(const path of ['/api/gallery',`/api/gallery/${gallery.items[0].id}/remove`])assert.equal((await get(url,{path,method:'POST'})).status,400);
 }));
+
+test('the instance guide preview uses the sourced catalogue without creating events',()=>preview(async({url})=>{
+  const guide=JSON.parse((await get(url,{path:'/api/event-templates'})).body);assert.equal(guide.templates.length,38);assert.equal(guide.templates.filter(row=>row.kind==='Dungeon').length,35);assert.equal(guide.templates.filter(row=>row.kind==='Raid'&&row.status==='announced').length,3);
+  assert(guide.templates.every(row=>row.minimum_level===null&&row.sources.length));
+  assert.equal((await get(url,{path:'/api/event-templates',method:'POST'})).status,400);
+  assert.equal(JSON.parse((await get(url,{path:'/api/hall'})).body).events.length,1);
+}));

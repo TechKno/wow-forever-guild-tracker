@@ -136,6 +136,22 @@ test('a cancellation arriving during scheduled-event creation queues cleanup of 
   assert(calls.some(call=>call.method==='DELETE'&&call.path.endsWith('/scheduled-events/'+SCHEDULED)));
   assert.equal((await DB.prepare('SELECT COUNT(*) n FROM discord_events').first()).n,0);
 });
+
+test('raid planning uses the scheduled-event queue without creating unrelated Discord resources',async()=>{
+  const {env,DB}=await fixture({mapped:false}),calls=[];
+  await DB.prepare("UPDATE events SET kind='Raid',capacity=20 WHERE id=?").bind(EVENT).run();
+  await outboxStatement(env,'raid-scheduled-create','event',EVENT,null,{}).run();
+  await withFetch(async(url,options)=>{
+    calls.push({path:new URL(url).pathname,method:options.method});
+    if(options.method==='GET'&&url.endsWith('/scheduled-events'))return Response.json([]);
+    if(options.method==='POST'&&url.endsWith('/scheduled-events')){
+      const body=JSON.parse(options.body);assert.equal(body.name,'Synthetic dungeon');assert.match(body.description,/Tracker event:/);return Response.json({id:SCHEDULED});
+    }
+    throw Error('Unexpected raid delivery request');
+  },()=>flushDiscord(env));
+  assert.equal(calls.filter(call=>call.method==='POST').length,1);
+  assert.equal((await DB.prepare('SELECT discord_id FROM discord_events WHERE event_id=?').bind(EVENT).first()).discord_id,SCHEDULED);
+});
 test('a cancellation arriving during announcement creation queues cleanup without adding reactions',async()=>{
   const {env,DB}=await fixture({mapped:false}),calls=[];await outboxStatement(env,'message-create','event_post',EVENT,null,{}).run();
   const normal=mockDiscord(calls);

@@ -5,6 +5,7 @@ import {readFile,realpath,stat} from 'node:fs/promises';
 import {resolve,dirname,join,relative,isAbsolute,extname,sep} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {CONFIG} from '../src/config.mjs';
+import {EVENT_CATALOGUE} from '../src/event-catalogue.mjs';
 
 const project=resolve(dirname(fileURLToPath(import.meta.url)),'..'),publicDirectory=join(project,'public');
 const observedAt='2026-11-09T09:00:00.000Z',generation='fictional-demo-roster-v1';
@@ -90,6 +91,7 @@ function adminOverview(fixtures){
 }
 function apiData(path,url,fixtures){
   if(path==='/api/public')return publicCount(fixtures);
+  if(path==='/api/event-templates')return {...EVENT_CATALOGUE,demo:true};
   if(path==='/api/gallery')return {items:url.searchParams.get('removed')==='1'?[]:galleryTitles.map((title,index)=>({id:galleryIds[index],title,caption:'An original fictional illustration for the read-only gallery preview. No member screenshot is shown.',author_name:['moss.and.moon','Oakshield','Cogworks'][index],created_at:observedAt,width:1200,height:750,image_url:`/api/gallery/${galleryIds[index]}/image`,thumbnail_url:`/api/gallery/${galleryIds[index]}/thumbnail`,can_manage:true,removed:false})),next:null,limits:{max_photos:200,max_bytes:100000000},can_upload:true,demo:true};
   if(path==='/api/status')return fixtures.status;
   if(path==='/api/members')return {generation,revision:generation,members:fixtures.members,next:null,demo:true};

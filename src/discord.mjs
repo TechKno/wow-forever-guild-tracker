@@ -1,6 +1,7 @@
 import {GUILD,RULESET_LABEL,CONFIG} from './config.mjs';
 import {currentUser,requireMember,requireAdmin,requireWrite,bodyJSON,WebError,ORIGIN,LEGACY_ORIGIN,isSiteOrigin,random,digest,stamp} from './auth.mjs';
 import {publishEventPost,eventChannelCheck,deleteEventDiscord,trackerMarker,discordField} from './event-posts.mjs';
+import {eventGuideLines} from './event-templates.mjs';
 import {eventInactive,eventTargetStatement,eventCleanupStatement} from './events.mjs';
 import {notificationCrafters,adoptOwnedManualMappings} from './admin-mappings.mjs';
 import {state} from './logic.mjs';
@@ -126,7 +127,7 @@ export async function discordAPI(env,path,method='GET',body){
 }
 export function dungeonPayload(event){
   const plain=value=>String(value||'').replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,100),footer='\nGuild sign-ups: '+ORIGIN+'/guild#events\nTracker event: '+event.id;
-  return {name:plain(event.title),privacy_level:2,entity_type:3,entity_metadata:{location:plain(event.location)||'World of Warcraft Forever · '+RULESET_LABEL},scheduled_start_time:event.starts_at,scheduled_end_time:new Date(Date.parse(event.starts_at)+(event.duration_minutes||120)*60000).toISOString(),description:discordField(event.description,1000).slice(0,1000-footer.length)+footer};
+  return {name:plain(event.title),privacy_level:2,entity_type:3,entity_metadata:{location:plain(event.location)||'World of Warcraft Forever · '+RULESET_LABEL},scheduled_start_time:event.starts_at,scheduled_end_time:new Date(Date.parse(event.starts_at)+(event.duration_minutes||120)*60000).toISOString(),description:discordField([event.description,...eventGuideLines(event)].filter(Boolean).join('\n'),1000).slice(0,1000-footer.length)+footer};
 }
 async function craftFallback(env,job,reason){
   if(job.kind!=='dm'||JSON.parse(job.payload).preference!=='crafter')return false;
@@ -155,7 +156,7 @@ async function deliver(env,job){
     const nonce=(await digest(job.id)).slice(0,25);
     await discordAPI(env,'/channels/'+channel.id+'/messages','POST',{content:`${GUILD} · ${payload.preference==='crafter'?'A guild member needs a recipe you know':payload.action==='created'?'Your crafting request was posted':'Your crafting request was updated ('+payload.action+')'}\n${discordField(payload.item,160)} · ${payload.crafts} craft(s)\nSend completed item to: ${discordField(row.character_name||row.recipient_name||'the requester’s selected character',240)}\n${ORIGIN}/guild#crafting`,allowed_mentions:{parse:[]},nonce,enforce_nonce:true});return 'sent';
   }
-  const event=await env.DB.prepare('SELECT * FROM events WHERE id=?').bind(job.reference_id).first();if(!event||event.kind!=='Dungeon')return 'skipped';
+  const event=await env.DB.prepare('SELECT * FROM events WHERE id=?').bind(job.reference_id).first();if(!event||!['Dungeon','Raid'].includes(event.kind))return 'skipped';
   if(eventInactive(event)){await eventCleanupStatement(env,event.id).run();return 'skipped';}
   await eventTargetStatement(env,event.id,config).run();
   const target=await state(env,'discord_event_target:'+event.id);

@@ -14,5 +14,6 @@ The preview includes a visible fictional-data banner, disables sign-in and rejec
 - `armory.jpg`: tabbed character card with fictional gear, statistics and an original neutral demo portrait.
 - `armory-phone.jpg`: the tabbed armory at a 390 × 844 CSS-pixel phone viewport.
 - `gallery.jpg`: the private gallery with fictional member names and original vector landscape illustrations served only by the isolated demo; no live member screenshots or uploaded files appear.
+- `events.jpg`: the sourced dungeon and raid guide, displayed with fictional account and event fixtures; no real event was created.
 
 To refresh them, build the site, run `npm run demo`, open its loopback URL and capture the desired page using fictional fixtures only. Keep credentials, browser account details and real member activity out of public images.

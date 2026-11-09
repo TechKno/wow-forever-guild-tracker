@@ -17,6 +17,7 @@ import {membershipRevision} from './guild-membership.mjs';
 import {currentRolePreferences,withRolePreferences} from './character-roles.mjs';
 import {adminOverview} from './admin-overview.mjs';
 import {guildRanks} from './guild-ranks.mjs';
+import {eventTemplateCatalogue} from './event-templates.mjs';
 import {galleryRoute} from './gallery.mjs';
 import {armoryView,armoryMedia,armoryIcon} from './armory.mjs';
 const securityHeaders={
@@ -72,6 +73,7 @@ async function handleRequest(request,env) {
         try{const user=await currentUser(request,env);requireMember(user);await protectMember(request,env,user);}
         catch(error){if(error instanceof WebError&&[401,403].includes(error.status))return json({error:error.message,access_required:true},error.status);throw error;}
       }
+      if(url.pathname==='/api/event-templates'&&request.method==='GET')return json(eventTemplateCatalogue());
       if(url.pathname==='/api/gallery'||url.pathname.startsWith('/api/gallery/')){
         const result=await galleryRoute(request,env);
         if(!(result instanceof Response))return json(result);

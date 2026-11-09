@@ -6,6 +6,7 @@ import {chosenCrafters} from './crafters.mjs';
 import {materialPlan} from './materials.mjs';
 import {mergeMember} from './logic.mjs';
 import {memberDirectory} from './discord-people.mjs';
+import {eventTemplateSettings,eventTemplateGuidance} from './event-templates.mjs';
 import {currentRolePreferences,withRolePreferences,saveRolePreferences} from './character-roles.mjs';
 export function text(value,max,minimum=0){
   if(typeof value!=='string')throw new WebError('Check the text fields');
@@ -62,7 +63,7 @@ export async function hallView(request,env){
   const discordGuild=(await discordConfig(env)).guild_id,rolePreferences=await currentRolePreferences(env);
   const characters=directory.results.map(d=>{const roster=JSON.parse(d.data),view=mergeMember(roster,d.details?JSON.parse(d.details):{});return withRolePreferences({...roster,level:view.level,level_source:view.level_source,level_observed_at:view.level_observed_at,user_id:d.user_id,is_main:d.main_character_id===d.character_id,is_alt:Boolean(d.show_as_alt),title:d.title||'',biography:d.biography||'',looking_for:d.looking_for||'',own:d.user_id===user.id},rolePreferences);});
   return {discord_guild_id:discordGuild,popular:popular.results,requests:requests.results.map(r=>{const {materials_json,change_id,...safe}=r;const post=craftPosts.results.find(p=>p.request_id===r.id),active=['open','claimed'].includes(r.status);return {...safe,discord_message_url:active&&post?.message_id?`https://discord.com/channels/${post.guild_id}/${post.channel_id}/${post.message_id}`:null,discord_channel_status:!active||!post?null:post.status==='failed'?'failed':post.message_id?'posted':'pending',discord_channel_note:active&&post?.last_error?post.last_error:null,targets:targets.results.filter(t=>t.request_id===r.id).map(t=>({character_id:t.character_id,name:t.name||'Former guild character'})),asked_me:targets.results.some(t=>t.request_id===r.id&&user.characters.some(c=>c.id===t.character_id)),materials_preference:r.materials,materials:materials_json?JSON.parse(materials_json):null,own:r.owner_id===user.id,claimed_by_me:r.crafter_id===user.id};}),
-    events:events.results.map(e=>({...e,discord_message_url:e.discord_message_id?`https://discord.com/channels/${discordGuild}/${e.discord_channel_id}/${e.discord_message_id}`:null,pending_reactions:pendingReactions.results.filter(p=>p.event_id===e.id).map(p=>({name:p.display_name,reason:p.result,roles:p.signature.split('|')})),role_limits:roleLimits(e),own:e.owner_id===user.id,signups:signups.results.filter(s=>s.event_id===e.id).map(s=>({...s,own:s.user_id===user.id}))})),
+    events:events.results.map(e=>{const {template_json,...safe}=e;return {...safe,template_guidance:eventTemplateGuidance(e),discord_message_url:e.discord_message_id?`https://discord.com/channels/${discordGuild}/${e.discord_channel_id}/${e.discord_message_id}`:null,pending_reactions:pendingReactions.results.filter(p=>p.event_id===e.id).map(p=>({name:p.display_name,reason:p.result,roles:p.signature.split('|')})),role_limits:roleLimits(e),own:e.owner_id===user.id,signups:signups.results.filter(s=>s.event_id===e.id).map(s=>({...s,own:s.user_id===user.id}))};}),
     directory:characters,people:await memberDirectory(env,user,characters,rolePreferences)};
 }
 async function recipeName(env,id){
@@ -136,11 +137,11 @@ export async function mutateHall(request,env){
     const active=await env.DB.prepare("SELECT COUNT(*) count FROM events WHERE owner_id=? AND status='open' AND datetime(starts_at,'+'||duration_minutes||' minutes')>datetime('now')").bind(user.id).first();
     if(active.count>=5)throw new WebError(quotaMessage,429);
     if(!Number.isFinite(starts.valueOf())||starts.valueOf()<Date.now()-3600000||starts.valueOf()>Date.now()+365*86400000)throw new WebError('Choose an event time within the next year');
-    const id=crypto.randomUUID(),duration=integer(body.duration_minutes||120,15,720),kind=choice(body.kind,['Dungeon','Roleplay','Other']);
-    if(kind==='Dungeon'&&starts.valueOf()<Date.now()+60000)throw new WebError('Choose a dungeon start time at least one minute ahead');
-    const statements=[env.DB.prepare("INSERT INTO events(id,owner_id,character_id,title,kind,description,location,starts_at,capacity,created_at,duration_minutes,role_limits_json) SELECT ?,?,?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM events WHERE owner_id=? AND status='open' AND datetime(starts_at,'+'||duration_minutes||' minutes')>datetime('now'))<5")
-      .bind(id,user.id,char.id,text(body.title,100,3),kind,text(body.description||'',1000),text(body.location||'',100),starts.toISOString(),integer(body.capacity||5,1,40),stamp(),duration,kind==='Dungeon'&&Number(body.capacity||5)===5?JSON.stringify({Tank:1,Healer:1,Damage:3}):null,user.id)];
-    if(kind==='Dungeon'&&await discordReady(env))statements.push(outboxStatement(env,'event:'+id+':create','event',id,null,{}));
+    const settings=eventTemplateSettings(body),id=crypto.randomUUID(),duration=integer(body.duration_minutes??settings.template_guidance?.duration_minutes??120,15,720),kind=settings.kind;
+    if(['Dungeon','Raid'].includes(kind)&&starts.valueOf()<Date.now()+60000)throw new WebError('Choose a dungeon or raid start time at least one minute ahead');
+    const statements=[env.DB.prepare("INSERT INTO events(id,owner_id,character_id,title,kind,description,location,starts_at,capacity,created_at,duration_minutes,role_limits_json,template_id,template_json) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM events WHERE owner_id=? AND status='open' AND datetime(starts_at,'+'||duration_minutes||' minutes')>datetime('now'))<5")
+      .bind(id,user.id,char.id,text(body.title??settings.template_guidance?.name,100,3),kind,text(body.description||'',1000),text(body.location??settings.template_guidance?.location??'',100),starts.toISOString(),settings.capacity,stamp(),duration,settings.role_limits?JSON.stringify(settings.role_limits):null,settings.template_id,settings.template_guidance?JSON.stringify(settings.template_guidance):null,user.id)];
+    if(['Dungeon','Raid'].includes(kind)&&await discordReady(env))statements.push(outboxStatement(env,'event:'+id+':create','event',id,null,{}));
     const config=await discordConfig(env);if(await discordReady(env))statements.push(eventTargetStatement(env,id,config));
     if(config.events_channel_id&&await discordReady(env))statements.push(outboxStatement(env,'event-post:'+id+':create','event_post',id,null,{}));
     const [created]=await env.DB.batch(statements);if(!changed(created))throw new WebError(quotaMessage,429);
@@ -163,7 +164,7 @@ export async function mutateHall(request,env){
       await env.DB.batch(statements);return {message:'Your sign-up was removed'};
     }
     if(body.action!=='join')throw new WebError('Choose a valid action');
-    const allowed=event.kind==='Dungeon'?['Tank','Healer','Damage']:event.kind==='Roleplay'?['Roleplay','Social']:['Tank','Healer','Damage','Roleplay','Social'];
+    const allowed=['Dungeon','Raid'].includes(event.kind)?['Tank','Healer','Damage']:event.kind==='Roleplay'?['Roleplay','Social']:['Tank','Healer','Damage','Roleplay','Social'];
     const char=ownCharacter(user,body.character_id),role=choice(body.role,allowed),note=text(body.note||'',200);
     if(eventInactive(event))throw new WebError('This role or event is full, or the event was cancelled',409);
     const previous=await env.DB.prepare('SELECT character_id,role,note,source FROM event_signups WHERE event_id=? AND user_id=?').bind(event.id,user.id).first();

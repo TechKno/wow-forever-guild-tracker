@@ -1,3 +1,4 @@
+import {eventGuideLines} from './event-templates.mjs';
 import {CONFIG} from './config.mjs';
 import {discordAPI,discordConfig,DeliveryError} from './discord.mjs';
 import {ORIGIN,digest} from './auth.mjs';
@@ -81,10 +82,10 @@ export async function deleteEventDiscord(env,id){
   await env.DB.prepare("UPDATE discord_outbox SET status='skipped',lease_until=0 WHERE reference_id=? AND kind IN ('event','event_post') AND status='pending'").bind(id).run();
   return 'sent';
 }
-export const reactionRoles=event=>event.kind==='Dungeon'?[{emoji:'🛡️',role:'Tank'},{emoji:'💚',role:'Healer'},{emoji:'⚔️',role:'Damage'}]:event.kind==='Roleplay'?[{emoji:'🎭',role:'Roleplay'},{emoji:'🍻',role:'Social'}]:[{emoji:'🛡️',role:'Tank'},{emoji:'💚',role:'Healer'},{emoji:'⚔️',role:'Damage'},{emoji:'🎭',role:'Roleplay'},{emoji:'🍻',role:'Social'}];
+export const reactionRoles=event=>['Dungeon','Raid'].includes(event.kind)?[{emoji:'🛡️',role:'Tank'},{emoji:'💚',role:'Healer'},{emoji:'⚔️',role:'Damage'}]:event.kind==='Roleplay'?[{emoji:'🎭',role:'Roleplay'},{emoji:'🍻',role:'Social'}]:[{emoji:'🛡️',role:'Tank'},{emoji:'💚',role:'Healer'},{emoji:'⚔️',role:'Damage'},{emoji:'🎭',role:'Roleplay'},{emoji:'🍻',role:'Social'}];
 export function eventAnnouncement(event,signups,pending=[],scheduled=null,guild=''){
   const limits=roleLimits(event),roles=reactionRoles(event),cancelled=event.status!=='open';
-  const lines=[`**${cancelled?'CANCELLED · ':''}${safe(event.title)}**`,`${safe(event.kind)} · <t:${Math.floor(Date.parse(event.starts_at)/1000)}:F> · ${event.duration_minutes||120} minutes`,event.location?'Meet at '+safe(event.location):'',event.description?safe(event.description).slice(0,120):'',`**Confirmed places: ${signups.length}/${event.capacity}**`];
+  const lines=[`**${cancelled?'CANCELLED · ':''}${safe(event.title)}**`,`${safe(event.kind)} · <t:${Math.floor(Date.parse(event.starts_at)/1000)}:F> · ${event.duration_minutes||120} minutes`,event.location?'Meet at '+safe(event.location):'',event.description?safe(event.description).slice(0,120):'',...eventGuideLines(event).map(line=>discordField(line,260)),`**Confirmed places: ${signups.length}/${event.capacity}**`];
   for(const {emoji,role}of roles){const matches=signups.filter(s=>s.role===role);lines.push(`${emoji} **${role}: ${matches.length}${limits?.[role]!==undefined?'/'+limits[role]:''}** — ${matches.length?matches.slice(0,6).map(s=>safe(s.character_name)).join(', ')+(matches.length>6?' +'+(matches.length-6)+' more':''):'open'}`);}
   if(pending.length)lines.push('**Awaiting confirmation:** '+pending.slice(0,5).map(s=>`${safe(s.display_name)} (${safe(s.result)})`).join(', ')+(pending.length>5?` +${pending.length-5} more`:''));
   if(!cancelled)lines.push('',`React ${roles.map(r=>r.emoji+' '+r.role).join(' / ')} to claim a party role. Keep one role reaction. Remove it to withdraw a Discord signup.`, 'Match your character with one-time '+CONFIG.discord.botName+' authorisation or ask a guild administrator to assign it. Your existing WoW ↔ Discord connection stays in place. Unmatched reactions wait for confirmation.', 'Website choices stay in place until you change your reaction. Reaction checks run each minute; several events may take longer.');
