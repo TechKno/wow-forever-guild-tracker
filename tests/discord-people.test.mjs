@@ -7,6 +7,7 @@ import {memberDirectory,cacheDiscordProfile,refreshOneDiscordProfile,discordDisp
 import {activeManualMappings,notificationCrafters,mappingView} from '../src/admin-mappings.mjs';
 import {ORIGIN,random,digest} from '../src/auth.mjs';
 import worker from '../src/worker.mjs';
+import {rosterDisplayGroups} from '../src/player-groups.mjs';
 const GUILD='222222222222222222',A='333333333333333333',B='444444444444444444';
 const epoch=()=>Math.floor(Date.now()/1000);
 const app=readFileSync(new URL('../public/app.js',import.meta.url),'utf8');
@@ -81,6 +82,18 @@ test('unlinked verified accounts retain their chosen main and unknown Discord na
   const f=await fixture(),people=await memberDirectory(f.env,f.user);
   assert(people.some(p=>p.display_name==='Bob Main'&&!p.discord_linked&&p.name_status==='unlinked'));
   assert(people.some(p=>p.display_name==='Discord member · name unavailable'&&p.discord_linked));assert(!JSON.stringify(people).includes(A));
+});
+test('a departed provider main falls back consistently without changing saved alt preferences or manual mapping authority',async()=>{
+  const f=await fixture();await f.DB.prepare('DELETE FROM membership WHERE character_id=101').run();await f.DB.prepare('UPDATE character_links SET show_as_alt=0 WHERE character_id=102').run();
+  await f.DB.prepare('INSERT INTO membership VALUES(?,?,?,?)').bind('current','alice-selected',103,JSON.stringify({id:103,name:'Alice Selected',slug:'alice-selected',class:'Mage',level:12})).run();
+  await f.DB.prepare('INSERT INTO character_links(character_id,user_id,verified_at,show_as_alt) VALUES(?,?,?,?)').bind(103,'u1',f.now,1).run();
+  const before=(await activeManualMappings(f.env)).map(row=>({character_id:row.character_id,participant_user_id:row.participant_user_id,discord_id:row.discord_id}));
+  const people=await memberDirectory(f.env,f.user),owner=people.find(person=>person.characters.some(character=>character.id===102)),fallback=owner.characters.find(character=>character.id===102),selected=owner.characters.find(character=>character.id===103);
+  assert.equal(fallback.is_main,true);assert.equal(fallback.is_alt,false);assert.equal(fallback.association,'provider');assert.equal(selected.is_main,false);assert.equal(selected.is_alt,true);
+  assert.deepEqual(rosterDisplayGroups([owner])[0].character_ids.slice().sort((a,b)=>a-b),[102,103,303]);assert.equal(rosterDisplayGroups([owner])[0].main_character_id,102);
+  assert(people.flatMap(person=>person.characters).filter(character=>character.association==='admin').every(character=>!character.is_main&&!character.is_alt));
+  assert.equal((await f.DB.prepare('SELECT main_character_id FROM users WHERE id=?').bind('u1').first()).main_character_id,101);assert.equal((await f.DB.prepare('SELECT show_as_alt FROM character_links WHERE character_id=102').first()).show_as_alt,0);
+  assert.deepEqual((await activeManualMappings(f.env)).map(row=>({character_id:row.character_id,participant_user_id:row.participant_user_id,discord_id:row.discord_id})),before);
 });
 test('conflicting or former-guild administrator mappings do not add characters to a Discord person',async()=>{
   const f=await fixture();await f.DB.prepare('INSERT INTO admin_discord_mappings VALUES(?,?,?,?,?,?,?)').bind(401,A,'u1',0,0,'u1',f.now).run();

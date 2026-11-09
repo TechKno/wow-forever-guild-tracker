@@ -19,7 +19,7 @@ function page(storage=new Map(),options={}){
   vm.runInContext("members=fixture;rosterLinks=[{character_id:1,user_id:'linked-player',main_character_id:1},{character_id:2,user_id:'linked-player',main_character_id:1}];status={sync:{published:'current'}};renderRoster();",context);
   const emit=(id,verified=true)=>{for(const fn of windowListeners.get('guild-member')||[])fn({detail:{user_id:id,verified,is_admin:false}});};
   const fire=(id,type)=>{for(const fn of listeners.get(id+':'+type)||[])fn({});};
-  return {context,storage,emit,sort(value,type='input'){element('sort').value=value;fire('sort',type);},group(){fire('group-roster','click');},
+  return {context,storage,emit,display(groups){context.fixtureGroups=groups;vm.runInContext('rosterDisplayGroups=fixtureGroups;rosterLinks=[];renderRoster()',context);},search(value){element('roster-search').value=value;vm.runInContext('renderRoster()',context);},expand(key){context.fixtureKey=key;vm.runInContext('expandedPlayers.add(fixtureKey);renderRoster()',context);},html(){return element('roster-body').innerHTML;},sort(value,type='input'){element('sort').value=value;fire('sort',type);},group(){fire('group-roster','click');},
     redraw(){vm.runInContext('renderRoster()',context);},state(){return {sort:element('sort').value,grouped:vm.runInContext('groupedRoster',context)};},
     names(){return [...element('roster-body').innerHTML.matchAll(/class="member-name"[^>]*>([^<]+)<\/button>/g)].map(m=>m[1]);}};
 }
@@ -31,6 +31,14 @@ test('a full reload restores the account sort and main/alt grouping, including t
   assert.deepEqual(reload.state(),{sort:'level',grouped:false});assert.deepEqual(reload.names(),first.names());
   reload.group();reload.sort('rank','change');
   const next=page(storage);next.emit('account-a');assert.deepEqual(next.state(),{sort:'rank',grouped:true});assert.deepEqual(next.names(),['Alpha Main','Beta Main']);
+});
+
+test('canonical display groups combine mapped alts under one escaped Discord person and remain searchable',()=>{
+  const p=page(),groupKey='A'.repeat(43);p.emit('account-a');p.display([{key:groupKey,display_name:'Guild Friend <unsafe>',discord_linked:true,main_character_id:1,character_ids:[1,2]}]);
+  assert.deepEqual(p.names(),['Alpha Main','Beta Main']);assert.match(p.html(),/Guild Friend &lt;unsafe&gt;/);assert(!p.html().includes('Guild Friend <unsafe>'));
+  p.search('Guild Friend');assert.deepEqual(p.names(),['Alpha Main','Zulu Alt']);
+  p.search('');p.expand('person:'+groupKey);assert.deepEqual(p.names(),['Alpha Main','Zulu Alt','Beta Main']);p.redraw();assert.deepEqual(p.names(),['Alpha Main','Zulu Alt','Beta Main']);
+  p.group();assert.deepEqual(p.names(),['Alpha Main','Beta Main','Zulu Alt'],'Ungrouped remains an explicit per-account view choice');
 });
 test('automatic redraws and repeated account refreshes preserve the selected view',()=>{
   const p=page();p.emit('account-a');p.sort('level');p.group();p.redraw();p.emit('account-a');p.redraw();

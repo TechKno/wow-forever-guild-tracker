@@ -12,6 +12,10 @@ Each completed roster publication records its observed/completed time, duration,
 
 Members can choose a main, group their alts, change each owned character's primary/additional combat roles, link or unlink Discord, and set crafting-DM preferences. Changes still require current Battle.net ownership and the session's CSRF protection. One member cannot edit another member's characters. Rechecking Battle.net access is a new ownership sign-in; it is separate from the scheduled game-data refresh.
 
+Changing the selected main retains the former main as an unsaved alt unless the member explicitly keeps it separate. Saved choices update the roster and directory together; older in-flight account responses cannot restore the previous grouping. The roster groups selected alts and active manual Discord associations under the same presentation identity, using the Discord display name when available. These display groups do not grant character ownership, sign-in access or bot permissions. Unchecked characters remain separate in the roster, while the member directory still lists the account's full current character collection.
+
+If the stored main leaves the guild, account, roster and directory views use the same first current verified character as a display fallback. This does not rewrite the member's saved main or alt choices. The hierarchy continues to represent each person by their highest guild rank, rather than by their chosen main.
+
 ## Guild hierarchy
 
 The hierarchy sorts current members by numeric guild rank, with rank 0 first. Each linked person appears once, represented by their highest-ranked current guild character. Ties prefer the highest level, then the chosen main. Other characters remain available in the roster and member directory. Missing rank data forms a separate unknown group.

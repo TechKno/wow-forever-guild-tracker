@@ -86,7 +86,7 @@ function editor(){
   const start=hall.indexOf('  function readRoleChoices('),end=hall.indexOf('  function renderAltChoices(',start);
   assert(start>=0&&end>start,'Role editor behavior must remain available to the fixture');
   vm.runInContext(hall.slice(start,end),context);
-  const refreshStart=hall.indexOf('  async function refreshMe(){'),refreshEnd=hall.indexOf('  function renderDiscord(){',refreshStart);
+  const refreshStart=hall.indexOf('  let accountRefreshVersion='),refreshEnd=hall.indexOf('  function renderDiscord(){',refreshStart);
   vm.runInContext(hall.slice(refreshStart,refreshEnd),context);
   const clearLine=hall.split('\n').find(line=>line.includes("el('clear-roles').addEventListener('click',"));
   assert(clearLine,'The editor must provide an explicit clear choice');vm.runInContext(clearLine,context);

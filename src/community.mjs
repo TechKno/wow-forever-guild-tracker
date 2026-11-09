@@ -6,8 +6,9 @@ import {chosenCrafters} from './crafters.mjs';
 import {materialPlan} from './materials.mjs';
 import {mergeMember} from './logic.mjs';
 import {memberDirectory} from './discord-people.mjs';
-import {eventTemplateSettings,eventTemplateGuidance} from './event-templates.mjs';
 import {currentRolePreferences,withRolePreferences,saveRolePreferences} from './character-roles.mjs';
+import {eventTemplateSettings,eventTemplateGuidance} from './event-templates.mjs';
+import {rosterDisplayGroups,effectivePlayerMains} from './player-groups.mjs';
 export function text(value,max,minimum=0){
   if(typeof value!=='string')throw new WebError('Check the text fields');
   const clean=value.trim().replaceAll('\u0000','');
@@ -22,16 +23,19 @@ export async function sessionView(request,env){
   if(!user)return {signed_in:false};
   const rolePreferences=user.verified?await currentRolePreferences(env):new Map();
   const main=user.characters.find(c=>c.id===user.main_character_id)||user.characters[0];
-  const links=user.verified?await env.DB.prepare(`SELECT l.user_id,l.character_id,u.main_character_id FROM character_links l
+  const links=user.verified?await env.DB.prepare(`SELECT l.user_id,l.character_id,l.show_as_alt,u.main_character_id FROM character_links l
     JOIN users u ON u.id=l.user_id JOIN verified_membership m ON m.character_id=l.character_id
     WHERE m.generation=(SELECT published FROM sync WHERE id=1) AND u.ownership_status='verified'
-    AND (l.character_id=u.main_character_id OR l.show_as_alt=1)`).all():{results:[]};
+    ORDER BY m.slug`).all():{results:[]};
+  const effectiveMains=effectivePlayerMains(links.results),playerLinks=links.results.filter(row=>row.character_id===effectiveMains.get(row.user_id)||row.show_as_alt===1)
+    .map(row=>({user_id:row.user_id,character_id:row.character_id,main_character_id:effectiveMains.get(row.user_id)}));
   return {signed_in:true,verified:user.verified,is_admin:user.is_admin,user_id:user.id,csrf:user.csrf,main_character_id:main?.id??null,
+    account_updated_at:Number.isFinite(Date.parse(user.updated_at))?new Date(user.updated_at).toISOString():null,
     ownership_checked_at:Number.isFinite(user.ownership_checked)&&user.ownership_checked>0?new Date(user.ownership_checked*1000).toISOString():null,
-    discord:await discordView(env,user),display_name:main?.name||'Battle.net member',characters:user.characters.map(c=>withRolePreferences(c,rolePreferences)),player_links:links.results,
+    discord:await discordView(env,user),display_name:main?.name||'Battle.net member',characters:user.characters.map(c=>withRolePreferences(c,rolePreferences)),player_links:playerLinks,
     message:user.verified?'Guild character ownership verified by Battle.net':user.ownership_status!=='verified'?
       'Signed in, but Blizzard did not return a verifiable Forever account character list. Sign in again to retry.':
-      'No current '+GUILD+' character was returned for this account. Blizzard account data can take time to update.'};
+      `No current ${GUILD} character was returned for this account. Blizzard account data can take time to update.`};
 }
 export async function hallView(request,env){
   const user=await currentUser(request,env);requireMember(user);
@@ -61,10 +65,12 @@ export async function hallView(request,env){
     env.DB.prepare("SELECT o.reference_id request_id,o.status,o.last_error,p.guild_id,p.channel_id,p.message_id FROM discord_outbox o LEFT JOIN discord_craft_posts p ON p.request_id=o.reference_id WHERE o.kind='craft_post' AND o.reference_id IN (SELECT id FROM requests ORDER BY created_at DESC LIMIT 150)").all()
   ]);
   const discordGuild=(await discordConfig(env)).guild_id,rolePreferences=await currentRolePreferences(env);
-  const characters=directory.results.map(d=>{const roster=JSON.parse(d.data),view=mergeMember(roster,d.details?JSON.parse(d.details):{});return withRolePreferences({...roster,level:view.level,level_source:view.level_source,level_observed_at:view.level_observed_at,user_id:d.user_id,is_main:d.main_character_id===d.character_id,is_alt:Boolean(d.show_as_alt),title:d.title||'',biography:d.biography||'',looking_for:d.looking_for||'',own:d.user_id===user.id},rolePreferences);});
+  const effectiveMains=effectivePlayerMains(directory.results);
+  const characters=directory.results.map(d=>{const roster=JSON.parse(d.data),view=mergeMember(roster,d.details?JSON.parse(d.details):{}),isMain=effectiveMains.get(d.user_id)===d.character_id;return withRolePreferences({...roster,level:view.level,level_source:view.level_source,level_observed_at:view.level_observed_at,user_id:d.user_id,is_main:isMain,is_alt:Boolean(d.show_as_alt)&&!isMain,title:d.title||'',biography:d.biography||'',looking_for:d.looking_for||'',own:d.user_id===user.id},rolePreferences);});
+  const people=await memberDirectory(env,user,characters,rolePreferences);
   return {discord_guild_id:discordGuild,popular:popular.results,requests:requests.results.map(r=>{const {materials_json,change_id,...safe}=r;const post=craftPosts.results.find(p=>p.request_id===r.id),active=['open','claimed'].includes(r.status);return {...safe,discord_message_url:active&&post?.message_id?`https://discord.com/channels/${post.guild_id}/${post.channel_id}/${post.message_id}`:null,discord_channel_status:!active||!post?null:post.status==='failed'?'failed':post.message_id?'posted':'pending',discord_channel_note:active&&post?.last_error?post.last_error:null,targets:targets.results.filter(t=>t.request_id===r.id).map(t=>({character_id:t.character_id,name:t.name||'Former guild character'})),asked_me:targets.results.some(t=>t.request_id===r.id&&user.characters.some(c=>c.id===t.character_id)),materials_preference:r.materials,materials:materials_json?JSON.parse(materials_json):null,own:r.owner_id===user.id,claimed_by_me:r.crafter_id===user.id};}),
     events:events.results.map(e=>{const {template_json,...safe}=e;return {...safe,template_guidance:eventTemplateGuidance(e),discord_message_url:e.discord_message_id?`https://discord.com/channels/${discordGuild}/${e.discord_channel_id}/${e.discord_message_id}`:null,pending_reactions:pendingReactions.results.filter(p=>p.event_id===e.id).map(p=>({name:p.display_name,reason:p.result,roles:p.signature.split('|')})),role_limits:roleLimits(e),own:e.owner_id===user.id,signups:signups.results.filter(s=>s.event_id===e.id).map(s=>({...s,own:s.user_id===user.id}))};}),
-    directory:characters,people:await memberDirectory(env,user,characters,rolePreferences)};
+    directory:characters,people,display_groups:rosterDisplayGroups(people)};
 }
 async function recipeName(env,id){
   const rows=await env.DB.prepare(`SELECT c.data FROM characters c JOIN verified_membership m ON m.character_id=c.id WHERE m.generation=(SELECT published FROM sync WHERE id=1)`).all();
@@ -77,13 +83,26 @@ export async function mutateHall(request,env){
   if(path==='/api/hall/roles')return saveRolePreferences(env,user,body);
   if(path==='/api/hall/main'){
     const char=ownCharacter(user,body.character_id);
-    const statements=[env.DB.prepare('UPDATE users SET main_character_id=?,updated_at=? WHERE id=?').bind(char.id,stamp(),user.id)];
+    let selected=null;
     if(body.alt_ids!==undefined){
       if(!Array.isArray(body.alt_ids)||body.alt_ids.length>100)throw new WebError('Choose your alt characters');
-      const selected=new Set(body.alt_ids.map(id=>ownCharacter(user,id).id));selected.delete(char.id);
-      for(const owned of user.characters)statements.push(env.DB.prepare('UPDATE character_links SET show_as_alt=? WHERE character_id=? AND user_id=?').bind(selected.has(owned.id)?1:0,owned.id,user.id));
+      selected=new Set(body.alt_ids.map(id=>ownCharacter(user,id).id));selected.delete(char.id);
     }
-    await env.DB.batch(statements);return {message:'Your main and alt choices were saved'};
+    const at=new Date(Math.max(Date.now(),Date.parse(user.updated_at)||0)+1).toISOString(),wanted=[...new Set([char.id,...(selected||[])])],marks=wanted.map(()=>'?').join(',');
+    const statements=[env.DB.prepare(`UPDATE users SET main_character_id=?,updated_at=? WHERE id=? AND ownership_status='verified'
+      AND ownership_checked=? AND ownership_checked>unixepoch()-86400 AND ownership_checked<=unixepoch()+60
+      AND EXISTS(SELECT 1 FROM sessions s WHERE s.user_id=users.id AND s.token_hash=? AND s.expires>unixepoch())
+      AND (SELECT COUNT(DISTINCT l.character_id) FROM character_links l JOIN verified_membership m ON m.character_id=l.character_id
+        AND m.generation=(SELECT published FROM sync WHERE id=1) WHERE l.user_id=users.id AND l.character_id IN (${marks}))=?`)
+      .bind(char.id,at,user.id,user.ownership_checked,user.token_hash,...wanted,wanted.length)];
+    if(selected){
+      const ids=user.characters.map(character=>character.id),chosen=[...selected];
+      statements.push(env.DB.prepare(`UPDATE character_links SET show_as_alt=CASE WHEN ${chosen.length?'character_id IN ('+chosen.map(()=>'?').join(',')+')':'0'} THEN 1 ELSE 0 END
+        WHERE user_id=? AND character_id IN (${ids.map(()=>'?').join(',')}) AND EXISTS(SELECT 1 FROM users u WHERE u.id=? AND u.main_character_id=? AND u.updated_at=?)`)
+        .bind(...chosen,user.id,...ids,user.id,char.id,at));
+    }
+    const [saved]=await env.DB.batch(statements);if(!changed(saved))throw new WebError('Character ownership changed; refresh the page before saving your main and alts',403);
+    return {message:'Your main and alt choices were saved',account_updated_at:at};
   }
   if(path==='/api/hall/profile'){
     const char=ownCharacter(user,body.character_id);

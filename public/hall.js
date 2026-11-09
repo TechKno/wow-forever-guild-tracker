@@ -11,9 +11,23 @@
     const response=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':me.csrf||''},body:JSON.stringify(data)});
     const result=await response.json();if(window.GuildAccess?.check(response,result))throw new Error('Sign in to reopen the guildhall');if(!response.ok)throw new Error(result.error||'That change could not be saved');return result;
   }
+  let accountRefreshVersion=0,sessionRefreshVersion=0,hallRefreshQueued=false,hallPromise=null;
+  const accountRevisionFloors=new Map();
+  function accountRevision(session){const value=typeof session?.account_updated_at==='string'?Date.parse(session.account_updated_at):NaN;return Number.isFinite(value)?value:0;}
+  function olderAccountSession(session){
+    const floor=accountRevisionFloors.get(session?.user_id)||0,current=me.user_id===session?.user_id?accountRevision(me):0;
+    return accountRevision(session)<Math.max(floor,current);
+  }
+  function accountSaved(event){
+    const detail=event.detail;if(typeof detail?.user_id!=='string'||!detail.user_id||me.user_id&&me.user_id!==detail.user_id)return;
+    const revision=accountRevision(detail);if(revision)accountRevisionFloors.set(detail.user_id,Math.max(revision,accountRevisionFloors.get(detail.user_id)||0));
+    loadHall({queue:true});
+  }
   async function refreshMe(){
+    const requestVersion=++sessionRefreshVersion,accountVersion=accountRefreshVersion,session=await fetchJSON('/api/me');
+    if(requestVersion!==sessionRefreshVersion||accountVersion!==accountRefreshVersion||olderAccountSession(session))return false;
     const previousAccount=me.user_id;
-    me=await fetchJSON('/api/me');
+    me=session;
     if(previousAccount!==me.user_id||!me.verified)roleDrafts.clear();
     el('data-nav').hidden=!me.is_admin;if(el('admin-nav'))el('admin-nav').hidden=!me.is_admin;window.dispatchEvent(new CustomEvent('guild-admin',{detail:Boolean(me.is_admin)}));
     window.dispatchEvent(new CustomEvent('guild-players',{detail:me.verified?me.player_links||[]:[]}));
@@ -25,7 +39,7 @@
     el('hall-welcome').textContent=me.verified?`Welcome, ${me.display_name}.`:'';
     if(!me.verified){hall=null;profileDrafts.clear();window.dispatchEvent(new CustomEvent('guild-hall-data',{detail:null}));}
     window.dispatchEvent(new CustomEvent('guild-member',{detail:{verified:me.verified,user_id:me.user_id,is_admin:me.is_admin,characters:me.characters||[],csrf:me.csrf}}));
-    window.GuildAccount?.render(me);renderDiscord();fillOwned();
+    window.GuildAccount?.render(me);renderDiscord();fillOwned();return true;
   }
   function renderDiscord(){
     const d=me.discord||{};el('discord-member-status').textContent=!d.configured?`The administrator has not connected ${SITE_BRAND.botName} yet.`:d.linked?`${SITE_BRAND.botName} authorised for your Discord account. You can use event role reactions and choose crafting notifications below.`:`Authorise ${SITE_BRAND.botName} once to match your Discord account to your verified guild character, or ask a guild administrator to map your character.`;
@@ -174,13 +188,16 @@
     const value=profileDrafts.get(String(el('rp-character').value))||char;
     for(const key of ['title','biography','looking_for'])form.elements[key].value=value?.[key]||'';
   }
-  async function loadHall(){
-    if(busy)return;busy=true;
-    try{await refreshMe();if(!me.verified)return;const account=me.csrf,result=await fetchJSON('/api/hall');if(!me.verified||me.csrf!==account)return;hall=result;renderRequests();renderDirectory();
+  function loadHall(options={}){
+    if(options?.queue===true){accountRefreshVersion++;sessionRefreshVersion++;hallRefreshQueued=true;}
+    if(busy)return hallPromise;busy=true;hallRefreshQueued=false;
+    const version=accountRefreshVersion;
+    hallPromise=(async()=>{try{if(!await refreshMe()||version!==accountRefreshVersion||!me.verified)return;const account=me.csrf,user=me.user_id,revision=accountRevision(me),result=await fetchJSON('/api/hall');if(!me.verified||me.csrf!==account||me.user_id!==user||accountRevision(me)!==revision||version!==accountRefreshVersion)return;hall=result;renderRequests();renderDirectory();
       const visibleEvents=hall.events.filter(event=>event.status!=='cancelled');
       el('event-list').innerHTML=visibleEvents.length?visibleEvents.map(eventCard).join(''):'<div class="panel empty"><span class="empty-symbol" aria-hidden="true">✦</span><h3>The noticeboard is quiet.</h3><p>Gather a dungeon party or arrange a guild evening.</p><button class="button primary" type="button" data-compose="events">Plan an event</button></div>';fillProfile();
       window.dispatchEvent(new CustomEvent('guild-hall-data',{detail:hall}));
-    }catch(error){feedback(error.message,true);}finally{busy=false;}
+    }catch(error){if(version===accountRefreshVersion)feedback(error.message,true);}finally{busy=false;hallPromise=null;if(hallRefreshQueued)loadHall();}})();
+    return hallPromise;
   }
   function recipeInput(){
     const value=el('craft-form').elements.item_name.value.trim();
@@ -291,11 +308,12 @@
   el('expand-components').addEventListener('change',()=>loadMaterials());
   el('craft-materials').addEventListener('change',event=>{const select=event.target.closest('[data-component]');if(select){componentChoices[select.dataset.component]=Number(select.value);loadMaterials();}});
   window.addEventListener('guild-data',updateCatalog);
+  window.addEventListener('guild-account-saved',accountSaved);
   window.GuildHall={load:loadHall,history:loadHistory,isAdmin:()=>Boolean(me.is_admin),select:showHallTab,pane:()=>hallTab,compose:pane=>{const form={craft:'craft-form',learn:'learn-form',events:'event-form'}[pane];if(form){showHallTab(pane);openComposer(form,true);}}};
   const initialPane=window.GuildRoute?.pane?.()||({events:'events',crafting:'craft',members:'people',wishlists:'learn'}[location.hash.slice(1)])||'craft';showHallTab(initialPane);
   const discordResult=new URLSearchParams(location.search).get('discord');if(discordResult){feedback(discordResult==='installed'?`${SITE_BRAND.botName} was installed in the configured guild server. Members can now authorise ${SITE_BRAND.botName} and choose notifications.`:discordResult==='linked'?`${SITE_BRAND.botName} authorised. Open Members & roleplay to choose your crafting notification preferences.`:discordResult==='in_use'?'That Discord account is already authorised for another guild account.':`${SITE_BRAND.botName} authorisation did not complete. Please try again.`,!['linked','installed'].includes(discordResult));history.replaceState(null,'',location.pathname+location.hash);}
   const signInError=new URLSearchParams(location.search).get('signin');
   if(signInError){feedback(signInError==='cancelled'?'Battle.net sign-in was cancelled.':'Battle.net sign-in could not complete. Please try again.',true);history.replaceState(null,'',location.pathname+location.hash);}
-  updateCatalog();refreshMe().then(()=>{if(!el('hall').hidden)loadHall();}).catch(error=>feedback(error.message,true));
+  updateCatalog();refreshMe().then(()=>{if(!el('hall').hidden||['roster','hierarchy'].includes(window.GuildRoute?.current?.()))loadHall();}).catch(error=>feedback(error.message,true));
   setInterval(()=>{if(!document.hidden&&(!el('hall').hidden||me.verified&&window.GuildRoute?.current?.()==='overview'))loadHall();},120000);
 })();

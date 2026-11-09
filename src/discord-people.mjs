@@ -3,6 +3,7 @@ import {activeManualMappings} from './admin-mappings.mjs';
 import {digest,stamp} from './auth.mjs';
 import {mergeMember,state} from './logic.mjs';
 import {currentRolePreferences,withRolePreferences} from './character-roles.mjs';
+import {effectivePlayerMains} from './player-groups.mjs';
 const epoch=()=>Math.floor(Date.now()/1000),snowflake=value=>typeof value==='string'&&/^\d{15,22}$/.test(value);
 const name=value=>typeof value==='string'?value.replace(/[\u0000-\u001f\u007f]/g,'').trim().slice(0,80)||null:null;
 export function discordDisplayName(profile){return name(profile?.nickname)||name(profile?.global_name)||name(profile?.username)||null;}
@@ -36,7 +37,7 @@ export async function memberDirectory(env,user,directory=null,rolePreferences=nu
   const config=await discordConfig(env),[providers,manual,profiles]=await Promise.all([
     verifiedRows(env),activeManualMappings(env),env.DB.prepare('SELECT * FROM discord_profiles WHERE guild_id=?').bind(config.guild_id).all()
   ]);
-  const cached=new Map(profiles.results.map(p=>[p.discord_id,p])),existing=new Map((directory||[]).map(c=>[c.id,c])),manualByCharacter=new Map(manual.map(m=>[m.character_id,m])),groups=new Map(),providerCharacters=new Set();
+  const cached=new Map(profiles.results.map(p=>[p.discord_id,p])),existing=new Map((directory||[]).map(c=>[c.id,c])),manualByCharacter=new Map(manual.map(m=>[m.character_id,m])),groups=new Map(),providerCharacters=new Set(),mains=effectivePlayerMains(providers);
   // Directory grouping may describe an account's verified characters. It does not create notification or event authority for them.
   const providerUsers=new Set(providers.map(row=>row.user_id)),assignedAccounts=new Map();
   for(const row of manual)if(providerUsers.has(row.participant_user_id)&&snowflake(row.discord_id)){
@@ -51,7 +52,7 @@ export async function memberDirectory(env,user,directory=null,rolePreferences=nu
     const roster=JSON.parse(row.roster),details=row.details?JSON.parse(row.details):{},assigned=manualByCharacter.get(roster.id);
     const accountIds=assignedAccounts.get(row.user_id),accountDiscord=accountIds?.size===1?[...accountIds][0]:null;
     const personal=snowflake(row.discord_id)?row.discord_id:null,did=personal||(assigned?.participant_user_id===row.user_id&&snowflake(assigned.discord_id)?assigned.discord_id:null)||accountDiscord;
-    const char={...mergeMember(roster,details),...existing.get(roster.id),is_main:row.main_character_id===roster.id,is_alt:Boolean(row.show_as_alt)&&row.main_character_id!==roster.id,
+    const char={...mergeMember(roster,details),...existing.get(roster.id),is_main:mains.get(row.user_id)===roster.id,is_alt:Boolean(row.show_as_alt)&&mains.get(row.user_id)!==roster.id,
       title:row.title||'',biography:row.biography||'',looking_for:row.looking_for||'',own:row.user_id===user.id,association:'provider'};
     providerCharacters.add(roster.id);add(did?'discord:'+did:'account:'+row.user_id,did,char,personal?'provider':did?'admin':'provider',row.user_id);
   }

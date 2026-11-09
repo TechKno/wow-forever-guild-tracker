@@ -5,7 +5,7 @@ const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<
 const date=value=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'Not yet observed';
 let adminStatus=null,pendingAdminTab=false,pendingAdminView='status',refreshCSRF='',refreshRequestVersion=0,refreshQueued=false,adminViewVersion=0;
 let members=[],recipes=[],status=null,evidenceLoaded=false,recipeLimit=60,refreshing=false;
-let rosterLinks=[],groupedRoster=true;
+let rosterLinks=[],rosterDisplayGroups=[],groupedRoster=true;
 let openMemberSlug=null,pendingCharacterId=null;
 const expandedPlayers=new Set();
 const rosterSortChoices=new Set(['name','level','rank']);
@@ -178,6 +178,7 @@ function activate(view,pane) {
   if(view==='history')window.GuildHall?.history();
   if(view==='gallery')window.GuildGallery?.load();
   if(view==='account')window.GuildAccount?.load();
+  if(view==='roster')window.GuildHall?.load();
   if(view==='admin')window.GuildAdminOverview?.load();
   if(view==='hierarchy'){window.GuildHierarchy?.update(members);window.GuildHierarchy?.load();window.GuildHall?.load();}
   history.replaceState(null,'','#'+view);
@@ -202,7 +203,7 @@ document.addEventListener('keydown',event=>{
 window.addEventListener('resize',()=>{if(!navigationOpen||window.innerWidth>960)setNavigation(false);});
 window.addEventListener('hashchange',()=>activate(location.hash.slice(1)||'overview'));
 window.addEventListener('guild-hall-pane',event=>{if(ROUTES[currentView]?.panel==='hall'&&currentPane!==event.detail)activate('hall',event.detail);});
-window.addEventListener('guild-hall-data',event=>{overviewHall=memberVerified&&event.detail?event.detail:null;renderPrivateOverview();});
+window.addEventListener('guild-hall-data',event=>{overviewHall=memberVerified&&event.detail?event.detail:null;rosterDisplayGroups=memberVerified&&Array.isArray(event.detail?.display_groups)?event.detail.display_groups:[];renderPrivateOverview();if(status)renderRoster();});
 window.addEventListener('guild-member',event=>{const wasVerified=memberVerified;memberVerified=Boolean(event.detail?.verified);if(!memberVerified)overviewHall=null;renderPrivateOverview();if(memberVerified&&!wasVerified&&currentView==='overview')window.GuildHall?.load();if(memberVerified&&currentView==='hierarchy')window.GuildHall?.load();});
 
 function deriveRecipes() {
@@ -272,36 +273,42 @@ window.addEventListener('guild-role-saved',event=>{
 function renderRoster() {
   const query=$('roster-search').value.toLowerCase().trim(),classFilter=$('class-filter').value,sort=$('sort').value;
   const roleFilter=roleChoices.includes($('role-filter').value)?$('role-filter').value:'';
-  const matches=m=>(!query||`${m.name} ${m.race} ${(m.professions||[]).map(p=>p.name).join(' ')}`.toLowerCase().includes(query))&&(!classFilter||m.class===classFilter)&&(!roleFilter||rolePreference(m).preferred_roles.includes(roleFilter));
+  const matches=m=>(!query||`${m.name} ${m.race} ${(m.professions||[]).map(p=>p.name).join(' ')} ${displayByCharacter.get(m.id)?.display_name||''}`.toLowerCase().includes(query))&&(!classFilter||m.class===classFilter)&&(!roleFilter||rolePreference(m).preferred_roles.includes(roleFilter));
   const linkByCharacter=new Map(rosterLinks.map(l=>[l.character_id,l]));
-  const grouped=groupedRoster&&rosterLinks.length>0,groups=new Map();
+  const grouped=groupedRoster&&(rosterLinks.length>0||rosterDisplayGroups.length>0),groups=new Map(),displayByCharacter=new Map();
+  for(const person of rosterDisplayGroups){
+    if(typeof person?.key!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(person.key)||!Array.isArray(person.character_ids))continue;
+    for(const id of person.character_ids)if(Number.isSafeInteger(id)&&id>0)displayByCharacter.set(id,person);
+  }
   for(const member of members){
-    const link=grouped?linkByCharacter.get(member.id):null,key=link?'player:'+link.user_id:'character:'+member.id;
-    if(!groups.has(key))groups.set(key,{key,linked:Boolean(link),main_id:link?.main_character_id,characters:[]});
+    const person=grouped?displayByCharacter.get(member.id):null,link=grouped?linkByCharacter.get(member.id):null,key=person?'person:'+person.key:link?'player:'+link.user_id:'character:'+member.id;
+    if(!groups.has(key))groups.set(key,{key,linked:Boolean(person||link),main_id:person?.main_character_id??link?.main_character_id,display_name:person?.discord_linked&&typeof person.display_name==='string'?person.display_name:'',characters:[]});
     groups.get(key).characters.push(member);
   }
   let rows=[...groups.values()].filter(g=>g.characters.some(matches)).map(g=>({...g,main:g.characters.find(m=>m.id===g.main_id)||g.characters[0]}));
   rows.sort((a,b)=>sort==='level'?byLevel(a.main,b.main):
     sort==='rank'?(a.main.rank??999)-(b.main.rank??999)||a.main.name.localeCompare(b.main.name):a.main.name.localeCompare(b.main.name));
   const professionTags=chars=>[...new Map(chars.flatMap(m=>(m.professions||[]).filter(p=>p.kind==='Primary').map(p=>[p.name,p]))).values()].map(p=>`<span class="tag">${escapeHTML(p.name)}</span>`).join('');
-  const singleRow=(m,isAlt=false)=>`<tr${isAlt?' class="alt-roster-row"':''}><td><span class="avatar" aria-hidden="true">${escapeHTML(m.name[0]||'?')}</span>${memberButton(m)}${isAlt?'<small class="alt-marker">Alt character</small>':''}</td><td>${classLabel(m)}${roleBadges(m,true)}</td><td>${escapeHTML(m.level??'—')}</td><td>${m.rank!=null?'Rank '+escapeHTML(m.rank):'Unknown'}</td><td><div class="combined-professions">${m.professions_at?professionTags([m])||'<span class="subtle">None returned</span>':'<span class="subtle">Not yet available</span>'}</div></td><td><span class="badge ${profileState(m)}">${escapeHTML(profileLabel(m))}</span></td></tr>`;
+  const personLabel=name=>name?`<strong class="roster-player-name">${escapeHTML(name)}</strong>`:'';
+  const singleRow=(m,isAlt=false,name='')=>`<tr${isAlt?' class="alt-roster-row"':''}><td>${personLabel(name)}<span class="avatar" aria-hidden="true">${escapeHTML(m.name[0]||'?')}</span>${memberButton(m)}${isAlt?'<small class="alt-marker">Alt character</small>':''}</td><td>${classLabel(m)}${roleBadges(m,true)}</td><td>${escapeHTML(m.level??'—')}</td><td>${m.rank!=null?'Rank '+escapeHTML(m.rank):'Unknown'}</td><td><div class="combined-professions">${m.professions_at?professionTags([m])||'<span class="subtle">None returned</span>':'<span class="subtle">Not yet available</span>'}</div></td><td><span class="badge ${profileState(m)}">${escapeHTML(profileLabel(m))}</span></td></tr>`;
   $('roster-body').innerHTML=rows.map(group=>{
-    if(!group.linked||group.characters.length===1)return singleRow(group.main);
+    if(!group.linked||group.characters.length===1)return singleRow(group.main,false,group.display_name);
     const m=group.main,alts=group.characters.filter(c=>c.id!==m.id&&(!roleFilter||matches(c))),open=expandedPlayers.has(group.key)||Boolean(query||classFilter||roleFilter);
     if(sort==='level')alts.sort(byLevel);
     const observedCount=group.characters.filter(c=>c.profile_status==='verified').length;
     const classes=[...new Set(alts.map(a=>a.class))].join(', ');
     const toggle=!roleFilter||alts.length?`<button class="alt-toggle" data-player="${escapeHTML(group.key)}" aria-expanded="${open}" aria-label="${open?'Collapse':'Expand'} alts for ${escapeHTML(m.name)}">${open?'▾':'▸'}</button>`:'';
-    return `<tr class="player-roster-row"><td>${toggle}<span class="avatar" aria-hidden="true">${escapeHTML(m.name[0]||'?')}</span>${memberButton(m)}<small class="alt-marker">Main · ${group.characters.length} linked characters${roleFilter&&!matches(m)?' · matching alt below':''}</small></td><td>${classLabel(m)}${roleBadges(m,true)}${classes?`<small class="alt-marker">Alts: ${escapeHTML(classes)}</small>`:''}</td><td>${escapeHTML(m.level??'—')}</td><td>${m.rank!=null?'Rank '+escapeHTML(m.rank):'Unknown'}</td><td><div class="combined-professions">${professionTags(group.characters)||'<span class="subtle">No primary professions returned</span>'}</div></td><td><span class="badge">${observedCount} / ${group.characters.length} observed</span></td></tr>${open?alts.map(a=>singleRow(a,true)).join(''):''}`;
+    return `<tr class="player-roster-row"><td>${personLabel(group.display_name)}${toggle}<span class="avatar" aria-hidden="true">${escapeHTML(m.name[0]||'?')}</span>${memberButton(m)}<small class="alt-marker">Main · ${group.characters.length} linked characters${roleFilter&&!matches(m)?' · matching alt below':''}</small></td><td>${classLabel(m)}${roleBadges(m,true)}${classes?`<small class="alt-marker">Alts: ${escapeHTML(classes)}</small>`:''}</td><td>${escapeHTML(m.level??'—')}</td><td>${m.rank!=null?'Rank '+escapeHTML(m.rank):'Unknown'}</td><td><div class="combined-professions">${professionTags(group.characters)||'<span class="subtle">No primary professions returned</span>'}</div></td><td><span class="badge">${observedCount} / ${group.characters.length} observed</span></td></tr>${open?alts.map(a=>singleRow(a,true)).join(''):''}`;
   }).join('');
   $('roster-empty').hidden=rows.length>0;
   if(!rows.length&&members.length)$('roster-empty').innerHTML='<h3>No members match those filters.</h3><p>Try another name, class or role. Searches include linked alts.</p>';
   const shown=rows.reduce((n,g)=>n+g.characters.length,0);
   $('roster-count').textContent=status?.sync.published?`${roleFilter?members.filter(matches).length:shown} of ${members.length} characters${roleFilter?' match '+roleFilter:''}${grouped?' · grouped by verified player links':''}`:'No verified roster yet';
-  $('group-roster').disabled=!rosterLinks.length;
+  $('group-roster').disabled=!(rosterLinks.length||rosterDisplayGroups.length);
   $('group-roster').textContent=grouped?'Player groups on':'Combine main / alts';
   $('group-roster').classList.toggle('active',grouped);
-  $('grouping-note').textContent=rosterLinks.length?'A player’s chosen main appears first, with combined professions. Expand the row to see their alts. Characters without verified ownership stay separate.':'Sign in with Battle.net to group verified main/alt characters. Each member’s links appear after their own account is verified.';
+  $('grouping-note').textContent=rosterLinks.length||rosterDisplayGroups.length?'Linked characters share one player row under their Discord name or chosen main, with combined professions. Expand the row to see their alts. Characters you keep separate stay separate.':'Sign in with Battle.net to group verified main/alt characters. Each member’s links appear after their own account is verified.';
+  if(!grouped&&(rosterLinks.length||rosterDisplayGroups.length))$('grouping-note').textContent='Showing characters separately. Select Combine main / alts to restore player groups.';
   if(grouped&&sort==='level')$('grouping-note').textContent+=' Groups sort by shown main level; alts stay under their main.';
   if(roleFilter)$('grouping-note').textContent+=` Includes primary and additional ${roleFilter} choices.${grouped?' Matching alts are shown under their main; other alts are hidden.':''}`;
 }
@@ -435,7 +442,8 @@ async function load(force=false) {
 window.addEventListener('guild-admin',event=>{if(!event.detail){adminViewVersion++;refreshRequestVersion++;refreshCSRF='';refreshQueued=false;$('refresh-wow').hidden=true;$('refresh-wow').disabled=true;$('refresh-wow').textContent='↻ Refresh WoW data';$('refresh-wow-feedback').hidden=true;$('refresh-wow-feedback').textContent='';adminStatus=null;evidenceLoaded=false;$('evidence-body').innerHTML='';$('sync-details').innerHTML='';$('limits').innerHTML='';if(pendingAdminTab||!$('status').hidden||!$('admin').hidden)activate('roster');window.GuildAdminOverview?.reset();pendingAdminTab=false;}else if(pendingAdminTab||['#status','#admin'].includes(location.hash)){const target=pendingAdminTab?pendingAdminView:location.hash.slice(1);pendingAdminTab=false;activate(target);}});
 window.addEventListener('guild-member',event=>{const allowed=Boolean(event.detail?.is_admin);refreshCSRF=allowed?event.detail.csrf||'':'';$('refresh-wow').hidden=!allowed;$('refresh-wow').disabled=!refreshCSRF||refreshQueued;});
 const initialTab=location.hash.slice(1);activate(ROUTES[initialTab]||initialTab==='hall'?initialTab:'overview');
-load();setInterval(()=>{if(!document.hidden)load();},60000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
+function refreshVisiblePeople(){if(!document.hidden&&['roster','hierarchy','members'].includes(currentView))window.GuildHall?.load();}
+load();setInterval(()=>{if(!document.hidden){load();refreshVisiblePeople();}},60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){load();refreshVisiblePeople();}});
 
 window.GuildCharacter={open:openCharacterById};
