@@ -25,6 +25,13 @@ async function fixture(){
 }
 async function visible(f){return (await f.DB.prepare("SELECT character_id,slug,data FROM verified_membership WHERE generation='current' ORDER BY character_id").all()).results;}
 
+test('a roster departure defeats both existing proof visibility and a late sign-in proof upsert',async()=>{
+  const f=await fixture(),late=profileMemberStatement(f.env,'owner',f.member);assert.equal((await visible(f)).length,1);
+  await f.DB.prepare('INSERT INTO membership_departures(character_id,slug,observed_at) VALUES(?,?,?)').bind(f.member.id,f.member.slug,new Date().toISOString()).run();
+  assert.equal((await visible(f)).length,0);await f.DB.prepare('DELETE FROM profile_members').run();await late.run();
+  assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM profile_members').first()).n,0);
+});
+
 test('account candidates use only safe structured ownership fields, never arbitrary provider hrefs',()=>{
   assert.deepEqual(candidateFromAccount({id:101,name:'Test',surname:'Adventurer',slug:'../../wrong',key:{href:'https://attacker.example/'}}),candidate());
   for(const bad of [{id:101,name:'Test'},{id:'101',name:'Test',surname:'Adventurer'},{id:0,name:'Test',surname:'Adventurer'},{id:101,name:'../../Test',surname:'Adventurer'},{id:101,name:'Test',surname:'Dr?x=y'},{id:101,key:{href:'https://eu.api.blizzard.com/profile/wow/character/test-adventurer'}}])assert.equal(candidateFromAccount(bad),null);

@@ -14,6 +14,17 @@ The screenshots below use **fictional demo data**. No live guild members, accoun
 ![Crafting requests with fictional demo data](docs/screenshots/crafting.jpg)
 
 <details>
+<summary>Account, administration, hierarchy and character armory previews</summary>
+
+![Manage My Account with fictional characters](docs/screenshots/account.jpg)
+![Private administrator overview with fictional counts](docs/screenshots/admin.jpg)
+![Centred guild hierarchy with fictional members](docs/screenshots/hierarchy.jpg)
+![Tabbed character armory with fictional equipment and artwork](docs/screenshots/armory.jpg)
+<img src="docs/screenshots/armory-phone.jpg" alt="Tabbed armory on a phone with fictional data" width="390">
+
+</details>
+
+<details>
 <summary>Phone layout</summary>
 
 <img src="docs/screenshots/mobile.jpg" alt="Phone roster layout with fictional demo data" width="390">
@@ -24,6 +35,11 @@ Screenshots are captured from the real interface using the isolated [demo previe
 
 ## Features
 
+- Private administrator overview with scheduler/provider health, account counts and completed roster-import history.
+- Manage My Account for owned characters, main/alt grouping, combat roles and Discord preferences.
+- A centred guild hierarchy sorted by in-game rank, with editable suggested rank names.
+- Tabbed character cards with a compact armory, protected item icons and character artwork, talents, professions and data details; unavailable sections stay unknown.
+- Roster-observed departures revoke supplemental membership proof and free future event places; verified roster returns restore eligibility.
 - Roster with class/profession composition, main/alt grouping, sorting and filters for primary **or additional** combat roles.
 - Members choose multiple roles per character and one primary. Only verified owners can edit them.
 - Character talent details, profession skills, observed recipes and crafting materials, including known component recipes.
@@ -52,6 +68,8 @@ Each installation is for **one guild** and has its own database, provider client
 5. Follow the hosting guide you selected above.
 
 See [customisation](docs/CUSTOMISATION.md) and [Discord setup](docs/DISCORD.md) for the complete settings and callback URLs. Credentials belong in your host's encrypted secrets or private secret files. The tracked example files contain no working credentials.
+
+See [accounts, administration and hierarchy](docs/ACCOUNTS-AND-ADMIN.md) for ownership, rank labels and departure handling.
 
 ## Try the interface with demo data
 

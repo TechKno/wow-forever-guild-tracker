@@ -25,5 +25,5 @@ export async function protectEntry(request,env){
 export async function protectMember(request,env,user){
   if(!['GET','HEAD'].includes(request.method))await enforceRate(env,'WRITE_RATE',user.id);
   const path=new URL(request.url).pathname;
-  if(request.method==='GET'&&(/^\/api\/recipe\//.test(path)||/^\/api\/characters\/\d+\/talents$/.test(path)||path==='/api/quests/compare'||['/api/admin/character-check','/api/admin/presence-capability'].includes(path)))await enforceRate(env,'LOOKUP_RATE',user.id);
+  if(request.method==='GET'&&(/^\/api\/recipe\//.test(path)||/^\/api\/characters\/\d+\/(talents|armory)$/.test(path)||path==='/api/quests/compare'||['/api/admin/character-check','/api/admin/presence-capability'].includes(path)))await enforceRate(env,'LOOKUP_RATE',user.id);
 }

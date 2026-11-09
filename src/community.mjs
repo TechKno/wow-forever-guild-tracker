@@ -26,6 +26,7 @@ export async function sessionView(request,env){
     WHERE m.generation=(SELECT published FROM sync WHERE id=1) AND u.ownership_status='verified'
     AND (l.character_id=u.main_character_id OR l.show_as_alt=1)`).all():{results:[]};
   return {signed_in:true,verified:user.verified,is_admin:user.is_admin,user_id:user.id,csrf:user.csrf,main_character_id:main?.id??null,
+    ownership_checked_at:Number.isFinite(user.ownership_checked)&&user.ownership_checked>0?new Date(user.ownership_checked*1000).toISOString():null,
     discord:await discordView(env,user),display_name:main?.name||'Battle.net member',characters:user.characters.map(c=>withRolePreferences(c,rolePreferences)),player_links:links.results,
     message:user.verified?'Guild character ownership verified by Battle.net':user.ownership_status!=='verified'?
       'Signed in, but Blizzard did not return a verifiable Forever account character list. Sign in again to retry.':

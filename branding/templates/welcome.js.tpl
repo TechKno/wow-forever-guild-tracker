@@ -1,7 +1,7 @@
 (() => {
   'use strict';
   const expected={{PUBLIC_IDENTITY_JSON}};
-  const routes=new Set(['overview','roster','hall','crafting','events','members','recipes','professions','history','adventures','status','wishlists']);
+  const routes=new Set(['overview','roster','hall','crafting','events','members','recipes','professions','history','adventures','status','wishlists','admin','account','hierarchy']);
   const hash=window.location.hash;
   if(hash.startsWith('#')&&routes.has(hash.slice(1))){window.location.replace('/guild'+hash);return;}
   const $=id=>document.getElementById(id);

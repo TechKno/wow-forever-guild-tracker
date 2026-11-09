@@ -1,6 +1,7 @@
 import {CONFIG,GUILD,SLUG,LOCALE,RULESET_ID,RULESET_NAME,RULESET_LABEL,providerURL,ensureDeploymentIdentity} from './config.mjs';
 import {progressStatements} from './progress.mjs';
 import {rosterProgressStatements} from './roster-progress.mjs';
+import {syncHistoryStatements} from './admin-overview.mjs';
 import {normalizeTalentBuild} from './talent-data.mjs';
 import {validateProfileMember,profileMemberRefreshStatement,profileMemberDeleteStatement} from './guild-membership.mjs';
 import {recheckOneProfileMember} from './profile-membership-refresh.mjs';
@@ -328,9 +329,10 @@ async function refreshCharacter(env,row) {
 }
 async function rosterStep(env,job,owner) {
   if(job.phase==='roster') {
+    const started=timestamp();
     const ruleset=await api(env,'/data/wow/ruleset/'+RULESET,'dynamic'),guild=await api(env,`/data/wow/guild/${SLUG}`),roster=await api(env,`/data/wow/guild/${SLUG}/roster`);
     const members=validateRoster(ruleset,guild,roster),generation=crypto.randomUUID();
-    await saveState(env,'staging',{members,guild:{id:guild.id,name:GUILD,ruleset:RULESET_LABEL,ruleset_id:RULESET,region:CONFIG.guild.region,faction:label(guild.faction)},generation,fetched_at:timestamp()});
+    await saveState(env,'staging',{members,guild:{id:guild.id,name:GUILD,ruleset:RULESET_LABEL,ruleset_id:RULESET,region:CONFIG.guild.region,faction:label(guild.faction)},generation,started_at:started,fetched_at:timestamp()});
     await syncUpdate(env,owner,{phase:'stage',cursor:0,generation,total:members.length,status:'syncing',message:'Guild verified; preparing roster',next_at:0});
     return;
   }
@@ -341,6 +343,37 @@ async function rosterStep(env,job,owner) {
   const cursor=job.cursor+chunk.length;
   if(cursor<staging.members.length){await syncUpdate(env,owner,{cursor,message:`Preparing roster · ${cursor} / ${job.total}`});return;}
   const publication=rosterProgressStatements(env,{generation:job.generation,previous:job.published,owner,observedAt:staging.fetched_at||timestamp()});
+  // A complete new roster supersedes older supplemental proofs for departures.
+  // Every marker/proof change commits with its published roster and chronicle.
+  if(job.published){
+    publication.unshift(env.DB.prepare(`INSERT INTO membership_departures(character_id,slug,observed_at)
+      SELECT o.character_id,o.slug,? FROM membership o WHERE o.generation=?
+        AND NOT EXISTS(SELECT 1 FROM membership n WHERE n.generation=? AND n.character_id=o.character_id)
+        AND EXISTS(SELECT 1 FROM sync WHERE id=1 AND lease=? AND generation=? AND phase='stage')
+      ON CONFLICT(character_id) DO UPDATE SET slug=excluded.slug,observed_at=excluded.observed_at`)
+      .bind(staging.fetched_at||timestamp(),job.published,job.generation,owner,job.generation));
+    publication.splice(1,0,env.DB.prepare(`DELETE FROM profile_members WHERE character_id IN (
+      SELECT o.character_id FROM membership o WHERE o.generation=?
+        AND NOT EXISTS(SELECT 1 FROM membership n WHERE n.generation=? AND n.character_id=o.character_id))
+      AND EXISTS(SELECT 1 FROM sync WHERE id=1 AND lease=? AND generation=? AND phase='stage')`)
+      .bind(job.published,job.generation,owner,job.generation));
+  }
+  publication.push(env.DB.prepare(`DELETE FROM membership_departures WHERE character_id IN (SELECT character_id FROM membership WHERE generation=?)
+    AND EXISTS(SELECT 1 FROM sync WHERE id=1 AND lease=? AND generation=? AND phase='stage')`).bind(job.generation,owner,job.generation));
+  if(job.published){
+    // Vacate a departed character's live party place while keeping historical
+    // event records. The usual poll will update the owned Discord announcement.
+    const departed=`SELECT o.character_id FROM membership o WHERE o.generation=? AND NOT EXISTS(
+      SELECT 1 FROM membership n WHERE n.generation=? AND n.character_id=o.character_id)`;
+    const liveEvents="SELECT id FROM events WHERE status='open' AND datetime(starts_at,'+'||duration_minutes||' minutes')>datetime('now')";
+    publication.push(env.DB.prepare(`UPDATE discord_event_posts SET next_poll_at=MIN(next_poll_at,?)
+      WHERE event_id IN (SELECT event_id FROM event_signups WHERE character_id IN (${departed}) AND event_id IN (${liveEvents}))
+        AND EXISTS(SELECT 1 FROM sync WHERE id=1 AND lease=? AND generation=? AND phase='stage')`)
+      .bind(epoch(),job.published,job.generation,owner,job.generation));
+    publication.push(env.DB.prepare(`DELETE FROM event_signups WHERE character_id IN (${departed}) AND event_id IN (${liveEvents})
+      AND EXISTS(SELECT 1 FROM sync WHERE id=1 AND lease=? AND generation=? AND phase='stage')`)
+      .bind(job.published,job.generation,owner,job.generation));
+  }
   if(job.published)publication.push(env.DB.prepare(`INSERT OR IGNORE INTO activity(id,character_id,kind,title,detail,observed_at)
     SELECT 'left:'||?||':'||m.character_id,m.character_id,'left',json_extract(m.data,'$.name')||' no longer appears in the roster',
     'A change in the returned roster; not an independent confirmation of leaving the guild',? FROM membership m WHERE m.generation=?
@@ -355,7 +388,9 @@ async function rosterStep(env,job,owner) {
     .bind(epoch(),job.published||'',job.generation).run();
   await saveState(env,'guild',staging.guild);
   const observed=staging.fetched_at||timestamp();
-  publication.push(syncUpdateStatement(env,owner,{published:job.generation,phase:'roster',cursor:0,roster_at:observed,completed_at:timestamp(),next_at:Math.floor(Date.parse(observed)/1000)+ROSTER_INTERVAL,status:'syncing',message:'Roster refreshed; activity checks continue independently'}));
+  const completed=timestamp();
+  publication.push(...syncHistoryStatements(env,{generation:job.generation,previous:job.published,owner,observedAt:observed,startedAt:staging.started_at||observed,completedAt:completed}));
+  publication.push(syncUpdateStatement(env,owner,{published:job.generation,phase:'roster',cursor:0,roster_at:observed,completed_at:completed,next_at:Math.floor(Date.parse(observed)/1000)+ROSTER_INTERVAL,status:'syncing',message:'Roster refreshed; activity checks continue independently'}));
   await env.DB.batch(publication);
   await env.DB.prepare('DELETE FROM membership WHERE generation<>? AND generation<>?').bind(job.generation,job.published||'').run();
   await env.DB.prepare('DELETE FROM character_refresh WHERE character_id NOT IN (SELECT character_id FROM verified_membership WHERE generation=?)').bind(job.generation).run();

@@ -15,17 +15,17 @@
     const previousAccount=me.user_id;
     me=await fetchJSON('/api/me');
     if(previousAccount!==me.user_id||!me.verified)roleDrafts.clear();
-    el('data-nav').hidden=!me.is_admin;window.dispatchEvent(new CustomEvent('guild-admin',{detail:Boolean(me.is_admin)}));
+    el('data-nav').hidden=!me.is_admin;if(el('admin-nav'))el('admin-nav').hidden=!me.is_admin;window.dispatchEvent(new CustomEvent('guild-admin',{detail:Boolean(me.is_admin)}));
     window.dispatchEvent(new CustomEvent('guild-players',{detail:me.verified?me.player_links||[]:[]}));
     el('sign-in').textContent=me.signed_in?me.display_name:'Sign in with Battle.net';
-    el('sign-in').href=me.signed_in?'#hall':'/auth/login';el('sign-out').hidden=!me.signed_in;
+    el('sign-in').href=me.signed_in?'#account':'/auth/login';el('sign-in').title=me.signed_in?'Manage My Account':'Sign in with Battle.net';el('sign-out').hidden=!me.signed_in;
     el('hall-gate').hidden=Boolean(me.verified);el('hall-member').hidden=!me.verified;
     el('hall-gate-message').textContent=me.signed_in?me.message:'Sign in with Battle.net to use crafting requests, wishlists, events and member profiles. Your guild characters are verified automatically.';
     el('hall-gate').querySelector('.gate-login').textContent=me.signed_in?'Refresh Battle.net character access':'Sign in with Battle.net';
     el('hall-welcome').textContent=me.verified?`Welcome, ${me.display_name}.`:'';
     if(!me.verified){hall=null;profileDrafts.clear();window.dispatchEvent(new CustomEvent('guild-hall-data',{detail:null}));}
     window.dispatchEvent(new CustomEvent('guild-member',{detail:{verified:me.verified,user_id:me.user_id,is_admin:me.is_admin,characters:me.characters||[],csrf:me.csrf}}));
-    renderDiscord();fillOwned();
+    window.GuildAccount?.render(me);renderDiscord();fillOwned();
   }
   function renderDiscord(){
     const d=me.discord||{};el('discord-member-status').textContent=!d.configured?`The administrator has not connected ${SITE_BRAND.botName} yet.`:d.linked?`${SITE_BRAND.botName} authorised for your Discord account. You can use event role reactions and choose crafting notifications below.`:`Authorise ${SITE_BRAND.botName} once to match your Discord account to your verified guild character, or ask a guild administrator to map your character.`;
@@ -262,7 +262,7 @@
   el('clear-roles').addEventListener('click',()=>{roleDrafts.set(String(el('role-character').value),{preferred_roles:[],primary_role:null});fillRoles();el('role-feedback').textContent='Choices cleared in this form. Save to remove your saved role preferences.';});
   el('rp-form').addEventListener('input',event=>{if(!['title','biography','looking_for'].includes(event.target.name))return;const form=el('rp-form');profileDrafts.set(String(form.elements.character_id.value),Object.fromEntries(['title','biography','looking_for'].map(key=>[key,form.elements[key].value])));});
   el('history-character').addEventListener('change',loadHistory);
-  el('sign-in').addEventListener('click',event=>{if(me.signed_in){event.preventDefault();activate('members');}});
+  el('sign-in').addEventListener('click',event=>{if(me.signed_in){event.preventDefault();activate('account');}});
   el('member-directory').addEventListener('click',event=>{const button=event.target.closest('[data-open-character]');if(button)window.GuildCharacter?.open(Number(button.dataset.openCharacter));});
   el('sign-out').addEventListener('click',async()=>{try{await send('/auth/logout',{});hall=null;profileDrafts.clear();window.dispatchEvent(new CustomEvent('guild-hall-data',{detail:null}));window.GuildAccess.leave();}catch(error){feedback(error.message,true);}});
   document.addEventListener('click',async event=>{

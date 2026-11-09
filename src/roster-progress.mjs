@@ -16,13 +16,14 @@ export function rosterProgressStatements(env,{generation,previous,owner,observed
   )`;
   const statements=[];
   if(previous)statements.push(env.DB.prepare(`INSERT OR IGNORE INTO activity(id,character_id,kind,title,detail,observed_at)
-    SELECT 'joined:'||n.character_id,n.character_id,'joined',json_extract(n.data,'$.name')||' appeared in the guild roster',
+    SELECT 'joined:'||?||':'||n.character_id,n.character_id,'joined',json_extract(n.data,'$.name')||' appeared in the guild roster',
       'First observed in this returned guild roster; this is not an exact in-game join time',?
     FROM membership n WHERE n.generation=?
       AND NOT EXISTS(SELECT 1 FROM membership o WHERE o.generation=? AND o.character_id=n.character_id)
-      AND NOT EXISTS(SELECT 1 FROM activity a WHERE a.character_id=n.character_id AND a.kind='joined')
+      AND NOT EXISTS(SELECT 1 FROM activity a WHERE a.character_id=n.character_id AND a.kind='joined'
+        AND a.observed_at>=COALESCE((SELECT MAX(l.observed_at) FROM activity l WHERE l.character_id=n.character_id AND l.kind='left'),''))
       AND EXISTS(SELECT 1 FROM sync WHERE id=1 AND lease=? AND generation=? AND phase='stage')`)
-    .bind(observedAt,generation,previous,owner,generation));
+    .bind(generation,observedAt,generation,previous,owner,generation));
   statements.push(env.DB.prepare(comparisons+` INSERT OR IGNORE INTO activity(id,character_id,kind,title,detail,observed_at)
     SELECT 'roster-level:'||?||':'||character_id,character_id,'level',name||' reached level '||returned_level,
       'Previously observed at level '||previous_level||' · Blizzard guild roster',?

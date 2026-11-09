@@ -15,6 +15,9 @@ import {queueCraftCleanups,pollOneCraftPost} from './craft-posts.mjs';
 import {protectEntry,protectMember} from './security.mjs';
 import {membershipRevision} from './guild-membership.mjs';
 import {currentRolePreferences,withRolePreferences} from './character-roles.mjs';
+import {adminOverview} from './admin-overview.mjs';
+import {guildRanks} from './guild-ranks.mjs';
+import {armoryView,armoryMedia,armoryIcon} from './armory.mjs';
 const securityHeaders={
   'X-Content-Type-Options':'nosniff','Referrer-Policy':'no-referrer',
   'Content-Security-Policy':"default-src 'self'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
@@ -69,6 +72,18 @@ async function handleRequest(request,env) {
         catch(error){if(error instanceof WebError&&[401,403].includes(error.status))return json({error:error.message,access_required:true},error.status);throw error;}
       }
       if(url.pathname==='/api/admin/character-mappings'&&['GET','POST'].includes(request.method))return json(await mappingRoute(request,env));
+      if(url.pathname==='/api/admin/overview'&&request.method==='GET')return json(await adminOverview(request,env));
+      if(url.pathname==='/api/guild/ranks'&&request.method==='GET'||url.pathname==='/api/admin/ranks'&&request.method==='POST')return json(await guildRanks(request,env));
+      const armoryMatch=url.pathname.match(/^\/api\/characters\/(\d+)\/armory$/);
+      if(armoryMatch&&request.method==='GET')return json(await armoryView(request,env,Number(armoryMatch[1])));
+      const mediaMatch=url.pathname.match(/^\/api\/characters\/(\d+)\/armory\/media\/([a-z-]+)$/);
+      const iconMatch=url.pathname.match(/^\/api\/characters\/(\d+)\/armory\/item\/(\d+)\/icon$/);
+      if((mediaMatch||iconMatch)&&request.method==='GET'){
+        const response=mediaMatch?await armoryMedia(request,env,Number(mediaMatch[1]),mediaMatch[2]):await armoryIcon(request,env,Number(iconMatch[1]),Number(iconMatch[2])),headers=new Headers(response.headers);
+        for(const [key,value]of Object.entries(securityHeaders))headers.set(key,value);
+        headers.set('Cache-Control','private, no-store');headers.set('Vary','Cookie');
+        return new Response(response.body,{status:response.status,headers});
+      }
       const talentMatch=url.pathname.match(/^\/api\/characters\/(\d+)\/talents$/);
       if(talentMatch&&request.method==='GET'){const result=await talentView(env,Number(talentMatch[1]));return json(result||{error:'Current guild character not found'},result?200:404);}
       if(url.pathname==='/api/admin/refresh'&&request.method==='POST'){

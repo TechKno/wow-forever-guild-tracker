@@ -119,3 +119,5 @@ test('temporary profile failures are labelled as delayed checks rather than miss
   p.run('openMember("rowan")');assert.match(p.element('member-content').innerHTML,/Temporarily unavailable/);
   assert.match(p.element('member-content').innerHTML,/The last Blizzard request timed out\./);
 });
+
+test('an account character selected before the roster finishes loading opens once its current membership is available',async()=>{const p=page();await p.run('openCharacterById(1)');assert.equal(p.element('member-dialog').open,true);assert.match(p.element('member-content').innerHTML,/Level 11/);assert.doesNotMatch(p.element('member-content').innerHTML,/Opening character/);});

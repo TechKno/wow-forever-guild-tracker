@@ -39,8 +39,9 @@ export function profileMemberStatement(env,userId,member,settings=CONFIG){
   const checked=Math.floor(Date.parse(member.membership_verified_at)/1000),expires=Math.floor(Date.parse(member.membership_expires_at)/1000);
   if(!positive(member.id)||!positive(member.guild_id)||member.ruleset_id!==ruleset||member.membership_source!=='character_profile'||!Number.isSafeInteger(checked)||expires-checked!==PROFILE_MEMBERSHIP_TTL||typeof userId!=='string'||!userId)throw Error('Profile membership proof is invalid');
   return env.DB.prepare(`INSERT INTO profile_members(character_id,slug,user_id,guild_id,ruleset,data,checked_at,expires,next_at,last_error)
-    VALUES(?,?,?,?,?,?,?,?,?,NULL) ON CONFLICT(character_id) DO UPDATE SET slug=excluded.slug,user_id=excluded.user_id,guild_id=excluded.guild_id,ruleset=excluded.ruleset,data=excluded.data,checked_at=excluded.checked_at,expires=excluded.expires,next_at=excluded.next_at,last_error=NULL`)
-    .bind(member.id,member.slug,userId,member.guild_id,ruleset,JSON.stringify(member),checked,expires,checked+PROFILE_RECHECK_INTERVAL);
+    SELECT ?,?,?,?,?,?,?,?,?,NULL WHERE NOT EXISTS(SELECT 1 FROM membership_departures WHERE character_id=?)
+    ON CONFLICT(character_id) DO UPDATE SET slug=excluded.slug,user_id=excluded.user_id,guild_id=excluded.guild_id,ruleset=excluded.ruleset,data=excluded.data,checked_at=excluded.checked_at,expires=excluded.expires,next_at=excluded.next_at,last_error=NULL`)
+    .bind(member.id,member.slug,userId,member.guild_id,ruleset,JSON.stringify(member),checked,expires,checked+PROFILE_RECHECK_INTERVAL,member.id);
 }
 
 function refreshProof(member,settings=CONFIG){
@@ -58,6 +59,7 @@ export function profileMemberRefreshStatement(env,snapshot,member,settings=CONFI
   if(member.id!==snapshot.character_id)throw Error('Profile membership identity changed');
   return env.DB.prepare(`UPDATE profile_members SET slug=?,guild_id=?,ruleset=?,data=?,checked_at=?,expires=?,next_at=?,last_error=NULL
     WHERE character_id=? AND user_id=? AND checked_at=? AND data=?
+      AND NOT EXISTS(SELECT 1 FROM membership_departures d WHERE d.character_id=profile_members.character_id)
       AND EXISTS(SELECT 1 FROM character_links l JOIN users u ON u.id=l.user_id
         WHERE l.character_id=profile_members.character_id AND l.user_id=profile_members.user_id
           AND u.ownership_status='verified' AND u.ownership_checked>unixepoch()-86400 AND u.ownership_checked<=unixepoch()+60)`)

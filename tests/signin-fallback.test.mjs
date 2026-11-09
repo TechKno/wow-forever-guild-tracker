@@ -116,6 +116,13 @@ test('unpublished profiles and provider failures cannot admit a roster-missing a
   }
 });
 
+test('a published departure blocks stale guild profiles from restoring access through sign-in fallback',async()=>{
+  const f=await fixture();await f.DB.prepare('INSERT INTO membership_departures(character_id,slug,observed_at) VALUES(?,?,?)').bind(candidate.id,candidate.slug,new Date().toISOString()).run();
+  const result=await signIn(f);assert.equal(result.user.verified,false);assert.equal(result.user.characters.length,0);
+  assert(!result.calls.some(call=>new URL(call.url).pathname==='/profile/wow/character/'+candidate.slug));
+  assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM profile_members').first()).n,0);
+});
+
 test('account ownership is essential: profile-like callback parameters or provider hrefs do not discover arbitrary characters',async()=>{
   const f=await fixture(),result=await signIn(f,{characters:[{id:999,key:{href:'https://evil.example/profile/wow/character/new-adventurer'}}],query:'&character=new-adventurer&id=91'});
   assert.equal(result.user.verified,false);

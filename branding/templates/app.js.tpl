@@ -3,10 +3,10 @@ const SITE_BRAND={{PUBLIC_BRAND_JSON}};
 const $=id=>document.getElementById(id);
 const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=value=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'Not yet observed';
-let adminStatus=null,pendingAdminTab=false,refreshCSRF='',refreshRequestVersion=0,refreshQueued=false,adminViewVersion=0;
+let adminStatus=null,pendingAdminTab=false,pendingAdminView='status',refreshCSRF='',refreshRequestVersion=0,refreshQueued=false,adminViewVersion=0;
 let members=[],recipes=[],status=null,evidenceLoaded=false,recipeLimit=60,refreshing=false;
 let rosterLinks=[],groupedRoster=true;
-let openMemberSlug=null;
+let openMemberSlug=null,pendingCharacterId=null;
 const expandedPlayers=new Set();
 const rosterSortChoices=new Set(['name','level','rank']);
 let rosterPreferenceKey=null,rosterPreferenceDirty=false;
@@ -91,10 +91,11 @@ function refreshDetails(member) {
   if(member.activity_checked_at)rows.push(['Activity last checked',date(member.activity_checked_at)]);
   if(member.last_login_at)rows.push(['Blizzard activity marker',date(member.last_login_at)]);
   if(reasons[member.details_refresh_reason])rows.push(['Details check reason',reasons[member.details_refresh_reason]]);
-  return `<div class="detail-group"><h3>Check times &amp; availability</h3>${rows.map(([key,value])=>`<div class="detail-row"><span>${escapeHTML(key)}</span><span>${escapeHTML(value)}</span></div>`).join('')}${member.profile_note?`<p>${escapeHTML(member.profile_note)}</p>`:''}<p>Blizzard can return an older snapshot even after a successful check. Check times do not establish live in-game data or online status.</p></div>`;
+  return `<div class="detail-group character-freshness"><h3>Check times &amp; availability</h3>${rows.map(([key,value])=>`<div class="detail-row"><span>${escapeHTML(key)}</span><span>${escapeHTML(value)}</span></div>`).join('')}${member.profile_note?`<p>${escapeHTML(member.profile_note)}</p>`:''}<p>Blizzard can return an older snapshot even after a successful check. Check times do not establish live in-game data or online status.</p></div>`;
 }
 
 function leaveGuild(){
+  window.dispatchEvent(new CustomEvent('guild-access-reset'));window.GuildArmory?.reset();window.GuildAccount?.reset();window.GuildAdminOverview?.reset();window.GuildHierarchy?.reset();
   document.body.textContent='';window.location.replace('/');
 }
 window.GuildAccess={leave:leaveGuild,check:(response,result)=>{if(response.status===401||result?.access_required===true){leaveGuild();return true;}return false;}};
@@ -107,6 +108,9 @@ async function fetchJSON(path) {
 }
 const ROUTES={
   overview:{panel:'overview',title:'The guild noticeboard',label:'The noticeboard',eyebrow:'PULL UP A CHAIR',description:'Good company, useful crafts, and the next grand misadventure.'},
+  account:{panel:'account',title:'Manage My Account',label:'Manage My Account',eyebrow:'YOUR PLACE AT THE TABLE',description:'Your characters, combat roles and connected accounts, all in one place.'},
+  admin:{panel:'admin',title:'The keeper’s overview',label:'Admin overview',eyebrow:'THE KEEPER’S LEDGER',description:'Guild health, completed imports and the changes worth your attention.'},
+  hierarchy:{panel:'hierarchy',title:'The guild hierarchy',label:'Guild hierarchy',eyebrow:'OUR COMPANY, IN ORDER',description:'The people of the guild, ordered by their in-game rank.'},
   roster:{panel:'roster',title:'The guild roster',label:'Guild roster',eyebrow:'THE COMPANY WE KEEP',description:'Every main, every alt, and the skills that make us a guild.'},
   events:{panel:'hall',pane:'events',title:'Events & adventures',label:'Events & adventures',eyebrow:'GATHER YOUR PARTY',description:'Find your next adventure. Choose a character, claim a role, and meet the guild.'},
   crafting:{panel:'hall',pane:'craft',title:'The guild workbench',label:'Crafting requests',eyebrow:'MADE BY THE GUILD',description:'Find the right crafter, gather the materials, and make something useful together.'},
@@ -149,7 +153,7 @@ function renderOverview(){
 function activate(view,pane) {
   if(view==='hall')view=paneRoutes[pane||currentPane]||'crafting';
   const route=ROUTES[view];if(!route)return;
-  if(view==='status'&&!window.GuildHall?.isAdmin()){pendingAdminTab=true;return;}
+  if(['status','admin'].includes(view)&&!window.GuildHall?.isAdmin()){pendingAdminTab=true;pendingAdminView=view;return;}
   const viewChanged=currentView!==view,wasNavigationOpen=navigationOpen;
   currentView=view;if(route.pane)currentPane=route.pane;
   document.querySelectorAll('.tab-panel').forEach(panel=>panel.hidden=panel.id!==route.panel);
@@ -171,6 +175,9 @@ function activate(view,pane) {
   if(view==='status'){if(!evidenceLoaded)loadEvidence();window.GuildAdventures?.admin();}
   if(view==='adventures')window.GuildAdventures?.load();
   if(view==='history')window.GuildHall?.history();
+  if(view==='account')window.GuildAccount?.load();
+  if(view==='admin')window.GuildAdminOverview?.load();
+  if(view==='hierarchy'){window.GuildHierarchy?.update(members);window.GuildHierarchy?.load();window.GuildHall?.load();}
   history.replaceState(null,'','#'+view);
   if(status)renderFreshness();
 }
@@ -194,7 +201,7 @@ window.addEventListener('resize',()=>{if(!navigationOpen||window.innerWidth>960)
 window.addEventListener('hashchange',()=>activate(location.hash.slice(1)||'overview'));
 window.addEventListener('guild-hall-pane',event=>{if(ROUTES[currentView]?.panel==='hall'&&currentPane!==event.detail)activate('hall',event.detail);});
 window.addEventListener('guild-hall-data',event=>{overviewHall=memberVerified&&event.detail?event.detail:null;renderPrivateOverview();});
-window.addEventListener('guild-member',event=>{const wasVerified=memberVerified;memberVerified=Boolean(event.detail?.verified);if(!memberVerified)overviewHall=null;renderPrivateOverview();if(memberVerified&&!wasVerified&&currentView==='overview')window.GuildHall?.load();});
+window.addEventListener('guild-member',event=>{const wasVerified=memberVerified;memberVerified=Boolean(event.detail?.verified);if(!memberVerified)overviewHall=null;renderPrivateOverview();if(memberVerified&&!wasVerified&&currentView==='overview')window.GuildHall?.load();if(memberVerified&&currentView==='hierarchy')window.GuildHall?.load();});
 
 function deriveRecipes() {
   const map=new Map();
@@ -345,7 +352,9 @@ function openMember(slug,refresh=false) {
   const focusable=inside?[...content.querySelectorAll('a[href],button,input,select,textarea,summary,[tabindex]')]:[];
   const focusIndex=inside?focusable.indexOf(focused):-1,focusId=inside?focused.id:'';
   openMemberSlug=slug;
-  $('member-content').innerHTML=`<div class="eyebrow gold">${escapeHTML(SITE_BRAND.guildName.toUpperCase())} · ${escapeHTML(SITE_BRAND.regionRuleset.toUpperCase())}</div><h2 class="detail-title">${escapeHTML(m.name)}</h2><p>${classLabel(m)} · Level ${escapeHTML(m.level??'?')} · ${escapeHTML(m.race)}</p><section class="character-talents" aria-label="Character talent trees"><div class="detail-group"><h3>Talent trees</h3>${m.talents?.length?m.talents.map(t=>`<div class="detail-row"><span>${escapeHTML(t.name)}</span><span>${escapeHTML(t.points??'?')} points</span></div>`).join(''):'<p>No active talent points were returned. No specialisation or combat role has been inferred.</p>'}<p>Observed: ${escapeHTML(date(m.talents_at))}${m.talents_status==='stale'?' · refresh unavailable':''}</p></div></section><div class="detail-group"><h3>Preferred combat roles</h3>${roleBadges(m)}<p>Chosen by this character’s owner. Preferences can be changed in Members &amp; alts and do not change event sign-ups.</p></div>${refreshDetails(m)}<div class="detail-group"><h3>Professions &amp; learned recipes</h3>${m.professions_at?(m.professions||[]).map(p=>`<div class="detail-group"><div class="detail-row"><strong>${escapeHTML(p.name)}</strong><span>${p.skill??'?'} / ${p.max_skill??'?'}</span></div><p>${escapeHTML(p.kind)}${p.tier?' · '+escapeHTML(p.tier):''} · ${p.recipe_status==='observed'?`${p.recipes.length} recipes returned`:'Recipe coverage not exposed'}</p><div class="detail-recipes">${(p.recipes||[]).map(r=>`<span class="tag">${escapeHTML(r.name)}</span>`).join('')}</div></div>`).join('')||'<p>No professions were returned in the last observed response.</p>':'<p>Profession information is not yet available.</p>'}<p>Observed: ${escapeHTML(date(m.professions_at))}${m.professions_status==='stale'?' · showing a previous observation':''}</p></div><div class="detail-group"><h3>Data status</h3>${['profile','professions','talents'].map(key=>`<div class="detail-row"><span>${escapeHTML(key)}</span><span class="badge ${escapeHTML(m[key+'_status']||'unverified')}">${escapeHTML(m[key+'_status']||'not yet observed')}</span></div>${m[key+'_error']?`<p>${escapeHTML(m[key+'_error'])}</p>`:''}`).join('')}</div>`;
+  $('member-content').innerHTML=`<div class="eyebrow gold">${escapeHTML(SITE_BRAND.guildName.toUpperCase())} · ${escapeHTML(SITE_BRAND.regionRuleset.toUpperCase())}</div><h2 class="detail-title">${escapeHTML(m.name)}</h2><p>${classLabel(m)} · Level ${escapeHTML(m.level??'?')} · ${escapeHTML(m.race)}</p><section class="character-talents" aria-label="Character talent trees"><div class="detail-group"><h3>Talent trees</h3>${m.talents?.length?m.talents.map(t=>`<div class="detail-row"><span>${escapeHTML(t.name)}</span><span>${escapeHTML(t.points??'?')} points</span></div>`).join(''):'<p>No active talent points were returned. No specialisation or combat role has been inferred.</p>'}<p>Observed: ${escapeHTML(date(m.talents_at))}${m.talents_status==='stale'?' · refresh unavailable':''}</p></div></section><div class="detail-group character-role-summary"><h3>Preferred combat roles</h3>${roleBadges(m)}<p>Chosen by this character’s owner. Preferences can be changed in Manage My Account and do not change event sign-ups.</p></div>${refreshDetails(m)}<div class="detail-group character-professions"><h3>Professions &amp; learned recipes</h3>${m.professions_at?(m.professions||[]).map(p=>`<div class="detail-group"><div class="detail-row"><strong>${escapeHTML(p.name)}</strong><span>${p.skill??'?'} / ${p.max_skill??'?'}</span></div><p>${escapeHTML(p.kind)}${p.tier?' · '+escapeHTML(p.tier):''} · ${p.recipe_status==='observed'?`${p.recipes.length} recipes returned`:'Recipe coverage not exposed'}</p><div class="detail-recipes">${(p.recipes||[]).map(r=>`<span class="tag">${escapeHTML(r.name)}</span>`).join('')}</div></div>`).join('')||'<p>No professions were returned in the last observed response.</p>':'<p>Profession information is not yet available.</p>'}<p>Observed: ${escapeHTML(date(m.professions_at))}${m.professions_status==='stale'?' · showing a previous observation':''}</p></div><div class="detail-group character-data-status"><h3>Data status</h3>${['profile','professions','talents'].map(key=>`<div class="detail-row"><span>${escapeHTML(key)}</span><span class="badge ${escapeHTML(m[key+'_status']||'unverified')}">${escapeHTML(m[key+'_status']||'not yet observed')}</span></div>${m[key+'_error']?`<p>${escapeHTML(m[key+'_error'])}</p>`:''}`).join('')}</div>`;
+  const armoryHost=document.createElement?.('section');if(armoryHost){armoryHost.className='character-armory';content.insertBefore?.(armoryHost,content.querySelector?.('.character-talents'));window.GuildArmory?.mount(armoryHost,m);}
+  window.GuildCharacterCard?.mount(content,m);
   const talentHost=content.querySelector?.('.character-talents');if(talentHost)window.GuildTalents?.render(m,talentHost);
   if(refresh){
     if(inside){const controls=[...content.querySelectorAll('a[href],button,input,select,textarea,summary,[tabindex]')];const replacement=controls.find(node=>focusId&&node.id===focusId)||controls[focusIndex];replacement?.focus?.({preventScroll:true});}
@@ -356,12 +365,13 @@ function refreshOpenMember(){
   const dialog=$('member-dialog');if(!dialog.open||!openMemberSlug)return;
   if(members.some(member=>member.slug===openMemberSlug)){openMember(openMemberSlug,true);return;}
   const scroll=dialog.scrollTop;
+  window.GuildArmory?.reset();
   $('member-content').innerHTML='<h2 class="detail-title">No current guild record</h2><p>This character was not returned in the latest guild roster. Close this window and check the roster again.</p>';
   dialog.scrollTop=scroll;
 }
 document.addEventListener('click',event=>{const button=event.target.closest('[data-member]');if(button)openMember(button.dataset.member);});
 document.querySelector('.dialog-close').addEventListener('click',()=>{openMemberSlug=null;$('member-dialog').close();});
-$('member-dialog').addEventListener('close',()=>{openMemberSlug=null;});
+$('member-dialog').addEventListener('close',()=>{openMemberSlug=null;pendingCharacterId=null;window.GuildArmory?.reset();window.GuildCharacterCard?.reset();});
 for(const id of ['roster-search','class-filter','role-filter']) $(id).addEventListener('input',renderRoster);
 const changeRosterSort=()=>{saveRosterView();renderRoster();};
 $('sort').addEventListener('input',changeRosterSort);
@@ -391,6 +401,20 @@ $('export').addEventListener('click',()=>{
   const url=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(row=>row.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));
   const anchor=document.createElement('a');anchor.href=url;anchor.download=SITE_BRAND.guildName+' roster.csv';anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 });
+function openCharacterById(value){
+  const id=Number(value);if(!Number.isSafeInteger(id)||id<=0)return;
+  const member=members.find(m=>m.id===id);if(member){pendingCharacterId=null;openMember(member.slug);return;}
+  pendingCharacterId=id;openMemberSlug=null;window.GuildArmory?.reset();window.GuildCharacterCard?.reset();
+  $('member-content').innerHTML='<h2 class="detail-title">Opening character</h2><p role="status">Checking the current guild roster…</p>';
+  if(!$('member-dialog').open)$('member-dialog').showModal();
+  return load(true);
+}
+function finishPendingCharacter(){
+  if(pendingCharacterId===null)return;const member=members.find(m=>m.id===pendingCharacterId);pendingCharacterId=null;
+  if(!$('member-dialog').open)return;
+  if(member)openMember(member.slug);else $('member-content').innerHTML='<h2 class="detail-title">No current guild record</h2><p>This character was not returned in the current guild roster.</p>';
+}
+
 async function load(force=false) {
   if(refreshing)return;refreshing=true;
   try {
@@ -399,17 +423,17 @@ async function load(force=false) {
     if(changed) {
       const all=[];let cursor=0;const generation=latest.sync.published??null,revision=typeof latest.sync.membership_revision==='string'?latest.sync.membership_revision:null;
       do {const page=await fetchJSON('/api/members?cursor='+cursor+(generation?'&generation='+encodeURIComponent(generation):'')+(revision!==null?'&revision='+encodeURIComponent(revision):''));if(page.generation!==generation||revision!==null&&page.revision!==revision)throw new Error('Guild membership changed during loading; the next check will retry');all.push(...page.members);cursor=page.next;}while(cursor!==null);
-      status=latest;members=all;deriveRecipes();updateSummary();renderRoster();renderProfessions();renderRecipes();refreshOpenMember();
-      window.dispatchEvent(new CustomEvent('guild-data'));
+      status=latest;members=all;window.GuildHierarchy?.update(members);deriveRecipes();updateSummary();renderRoster();renderProfessions();renderRecipes();refreshOpenMember();
+      finishPendingCharacter();window.dispatchEvent(new CustomEvent('guild-data'));
       if(!$('status').hidden)await loadEvidence();
     } else {status=latest;renderFreshness();renderStatus();}
   } catch(error) {$('notice').hidden=false;$('notice').textContent=error.message+'. Previously loaded data remains visible.';$('notice').classList.remove('ready');$('connection').textContent='Connection unavailable';}
   finally{refreshing=false;}
 }
-window.addEventListener('guild-admin',event=>{if(!event.detail){adminViewVersion++;refreshRequestVersion++;refreshCSRF='';refreshQueued=false;$('refresh-wow').hidden=true;$('refresh-wow').disabled=true;$('refresh-wow').textContent='↻ Refresh WoW data';$('refresh-wow-feedback').hidden=true;$('refresh-wow-feedback').textContent='';adminStatus=null;evidenceLoaded=false;$('evidence-body').innerHTML='';$('sync-details').innerHTML='';$('limits').innerHTML='';if(pendingAdminTab||!$('status').hidden)activate('roster');pendingAdminTab=false;}else if(pendingAdminTab||location.hash==='#status'){pendingAdminTab=false;activate('status');}});
+window.addEventListener('guild-admin',event=>{if(!event.detail){adminViewVersion++;refreshRequestVersion++;refreshCSRF='';refreshQueued=false;$('refresh-wow').hidden=true;$('refresh-wow').disabled=true;$('refresh-wow').textContent='↻ Refresh WoW data';$('refresh-wow-feedback').hidden=true;$('refresh-wow-feedback').textContent='';adminStatus=null;evidenceLoaded=false;$('evidence-body').innerHTML='';$('sync-details').innerHTML='';$('limits').innerHTML='';if(pendingAdminTab||!$('status').hidden||!$('admin').hidden)activate('roster');window.GuildAdminOverview?.reset();pendingAdminTab=false;}else if(pendingAdminTab||['#status','#admin'].includes(location.hash)){const target=pendingAdminTab?pendingAdminView:location.hash.slice(1);pendingAdminTab=false;activate(target);}});
 window.addEventListener('guild-member',event=>{const allowed=Boolean(event.detail?.is_admin);refreshCSRF=allowed?event.detail.csrf||'':'';$('refresh-wow').hidden=!allowed;$('refresh-wow').disabled=!refreshCSRF||refreshQueued;});
 const initialTab=location.hash.slice(1);activate(ROUTES[initialTab]||initialTab==='hall'?initialTab:'overview');
 load();setInterval(()=>{if(!document.hidden)load();},60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)load();});
 
-window.GuildCharacter={open:id=>{const member=members.find(m=>m.id===Number(id));if(member)openMember(member.slug);}};
+window.GuildCharacter={open:openCharacterById};

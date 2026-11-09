@@ -122,8 +122,9 @@ export async function authRoute(request,env){
         if(!Array.isArray(account.wow_accounts)||account.wow_accounts.some(a=>!Array.isArray(a.characters)))throw new WebError('Account character list is not recognised');
         const accountCharacters=account.wow_accounts.flatMap(a=>a.characters);
         const ids=[...new Set(accountCharacters.map(c=>c?.id).filter(id=>Number.isSafeInteger(id)&&id>0))];
-        const roster=await env.DB.prepare('SELECT DISTINCT m.character_id FROM membership m JOIN sync s ON m.generation=s.published WHERE s.id=1').all();
-        const guildIds=new Set(roster.results.map(c=>c.character_id));
+        const roster=await env.DB.prepare('SELECT DISTINCT m.character_id,0 departed FROM membership m JOIN sync s ON m.generation=s.published WHERE s.id=1 UNION ALL SELECT character_id,1 departed FROM membership_departures').all();
+        const guildIds=new Set(roster.results.filter(c=>!c.departed).map(c=>c.character_id));
+        const departedIds=new Set(roster.results.filter(c=>c.departed).map(c=>c.character_id));
         const owned=ids.filter(id=>guildIds.has(id));
         const proofs=[];
         const scanKey='ownership_scan:'+user.id;
@@ -133,7 +134,7 @@ export async function authRoute(request,env){
         if(Number.isSafeInteger(knownGuild?.id)&&knownGuild.id>0&&knownGuild.name===GUILD&&knownGuild.ruleset===RULESET_LABEL){
           const candidates=new Map(),conflicts=new Set();
           for(const character of accountCharacters){
-            const candidate=candidateFromAccount(character);if(!candidate||guildIds.has(candidate.id))continue;
+            const candidate=candidateFromAccount(character);if(!candidate||guildIds.has(candidate.id)||departedIds.has(candidate.id))continue;
             if(candidates.has(candidate.id)&&candidates.get(candidate.id).slug!==candidate.slug)conflicts.add(candidate.id);
             else candidates.set(candidate.id,candidate);
           }

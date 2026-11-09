@@ -9,7 +9,7 @@ test('the screenshot preview binds only loopback, labels fictional pages and ser
   const page=await get(url,{path:'/guild'});assert.equal(page.status,200);assert.match(page.body,/Demo data · Fictional characters and activity · Read-only preview/);assert.match(page.body,/\/demo.css/);
   const roster=JSON.parse((await get(url,{path:'/api/members'})).body);assert(roster.members.length>=8);assert.equal(roster.demo,true);
   assert(roster.members.every(member=>member.preferred_roles.includes(member.primary_role)));
-  const me=JSON.parse((await get(url,{path:'/api/me'})).body);assert.equal(me.user_id,'demo-tamsin');assert.equal(me.is_admin,false);
+  const me=JSON.parse((await get(url,{path:'/api/me'})).body);assert.equal(me.user_id,'demo-tamsin');assert.equal(me.is_admin,true);assert.equal(me.demo,true);assert.equal(me.csrf,'demo-read-only');assert(me.characters.length>=2);assert.equal(me.discord.linked,true);
   const hall=JSON.parse((await get(url,{path:'/api/hall'})).body);assert(hall.events.length);assert(hall.requests.some(request=>request.materials?.components?.length));assert(hall.people.some(person=>person.display_name==='moss.and.moon'));
   const denied=await get(url,{path:'/api/hall/roles',method:'POST'});assert.equal(denied.status,400);assert.match(denied.body,/read-only/);
   assert.deepEqual(JSON.parse((await get(url,{path:'/api/members'})).body),roster,'A rejected write must not alter demo data');
@@ -26,6 +26,15 @@ test('the screenshot server blocks project files, traversal, remote-host rebindi
 test('demo requests do not read provider credentials or invoke provider fetches',async()=>{
   const originalFetch=globalThis.fetch,prior=process.env.BLIZZARD_CLIENT_SECRET;
   globalThis.fetch=()=>{throw Error('Provider fetches must never run in the screenshot preview');};process.env.BLIZZARD_CLIENT_SECRET='sentinel-demo-private';
-  try{await preview(async({url})=>{for(const path of ['/api/status','/api/me','/api/hall','/api/history?character=105','/api/recipe/1001','/api/crafters/1001','/api/characters/105/talents']){const response=await get(url,{path});assert.equal(response.status,200,path);assert(!response.body.includes('sentinel-demo-private'));assert.equal(JSON.parse(response.body).demo,true);}});}
+  try{await preview(async({url})=>{for(const path of ['/api/status','/api/me','/api/hall','/api/history?character=105','/api/recipe/1001','/api/crafters/1001','/api/characters/105/talents','/api/characters/105/armory','/api/admin/overview','/api/guild/ranks','/api/admin/status','/api/evidence','/api/admin/discord','/api/admin/character-mappings']){const response=await get(url,{path});assert.equal(response.status,200,path);assert(!response.body.includes('sentinel-demo-private'));assert.equal(JSON.parse(response.body).demo,true);}});}
   finally{globalThis.fetch=originalFetch;prior===undefined?delete process.env.BLIZZARD_CLIENT_SECRET:process.env.BLIZZARD_CLIENT_SECRET=prior;}
 });
+test('the expanded interface preview serves fictional armory, administrator history and rank fixtures while every write remains disabled',()=>preview(async({url})=>{
+  const admin=JSON.parse((await get(url,{path:'/api/admin/overview'})).body);assert.equal(admin.counts.characters,9);assert(admin.imports.some(row=>row.left>0));assert(admin.imports.some(row=>row.joined>0));assert.match(admin.import_history_note,/Fictional/);
+  const ranks=JSON.parse((await get(url,{path:'/api/guild/ranks'})).body);assert.equal(ranks.labels[0],'Guildmaster');assert.equal(ranks.ranks.length,10);
+  const armory=JSON.parse((await get(url,{path:'/api/characters/105/armory'})).body);assert.equal(armory.character_id,105);assert(armory.sections.equipment.data.items.length>=4);assert(armory.sections.statistics.data.values.length>=4);assert.match(armory.note,/fictional/);
+  const media=await get(url,{path:armory.sections.media.data.assets[0].url});assert.equal(media.status,200);assert.match(media.headers['content-type'],/image\/svg\+xml/);assert.match(media.body,/FICTIONAL DEMO PORTRAIT/);assert.doesNotMatch(media.body,/<script|(?:href|src)=["']https?:/);
+  for(const path of ['/api/characters/999/armory','/api/characters/999/armory/media/main'])assert.equal((await get(url,{path})).status,404);
+  for(const path of ['/api/admin/ranks','/api/admin/refresh','/api/hall/main','/api/hall/discord']){const result=await get(url,{path,method:'POST'});assert.equal(result.status,400);assert.match(result.body,/read-only/);}
+  for(const path of ['/account.js','/admin-overview.js','/armory.js','/hierarchy.js'])assert.equal((await get(url,{path})).status,200);
+}));

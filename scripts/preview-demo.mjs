@@ -18,6 +18,8 @@ const recipes={
   potion:{id:1004,name:'Minor Healing Potion'},rage:{id:1005,name:'Rage Potion'},tube:{id:1006,name:'Copper Tube'},dummy:{id:1007,name:'Target Dummy'},
   stone:{id:1008,name:'Coarse Grinding Stone'},mace:{id:1009,name:'Bronze Mace'},wolf:{id:1010,name:'Spiced Wolf Meat'},boar:{id:1011,name:'Roasted Boar Meat'}
 };
+const rankLabels={'0':'Guildmaster','1':'Officer','2':'Veteran','3':'Member','4':'Initiate','5':'Reserve','6':'Recruit','7':'Newcomer','8':'Guest','9':'Visitor'};
+const demoPortrait='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 380"><defs><linearGradient id="paper" x2="0" y2="1"><stop stop-color="#e6d4ad"/><stop offset="1" stop-color="#f9f0de"/></linearGradient></defs><rect width="320" height="380" rx="14" fill="url(#paper)"/><circle cx="160" cy="120" r="77" fill="none" stroke="#b4965e" stroke-width="2"/><path d="M87 335c4-77 29-113 73-113s69 36 73 113" fill="#647653"/><path d="M124 99l36-44 36 44-14 17h-44z" fill="#53684a"/><circle cx="160" cy="145" r="42" fill="#d3b384"/><path d="M117 132c-2-49 88-54 86 0l-22-22-20 14-24-11z" fill="#66513a"/><path d="M128 184l32 30 32-30-6 34-26 20-26-20z" fill="#765b3c"/><path d="M104 258l56 28 56-28-12 50-44 34-44-34z" fill="#af8a45"/><path d="M260 320l-13-175 12-43 10 43-3 175" fill="#907348"/><text x="160" y="363" text-anchor="middle" font-family="Georgia,serif" font-size="12" fill="#715b38">FICTIONAL DEMO PORTRAIT</text></svg>';
 const profession=(name,id,skill,known=[],kind='Primary')=>({id,name,kind,tier:name,skill,max_skill:150,recipe_status:'observed',recipes:known});
 function materialPlan(crafts=1){
   return {status:'verified',recipe_id:recipes.bag.id,recipe_name:recipes.bag.name,crafts,observed_at:observedAt,output:{value:1},
@@ -58,7 +60,7 @@ export function demoFixtures(){
   ];
   const hall={events:[event],requests,directory:people.flatMap(person=>person.characters.map(character=>({...character,user_id:'demo-'+owners.get(character.id)}))),people,popular:[{recipe_id:1001,item_name:'Linen Bag',request_count:6,member_count:4,total_crafts:10,active_count:2},{recipe_id:1004,item_name:'Minor Healing Potion',request_count:4,member_count:3,total_crafts:20,active_count:1}]};
   const status={guild:{name:CONFIG.guild.name,ruleset:CONFIG.guild.region.toUpperCase()+' '+CONFIG.guild.ruleset.name},sync:{published:generation,membership_revision:generation,status:'ready',updated:observedAt,roster_at:observedAt,total:members.length},refresh:{last_success_at:observedAt,roster_at:observedAt,last_character_check_at:observedAt,oldest_professions_at:observedAt,latest_professions_at:observedAt,pending:0},demo:true};
-  const me={signed_in:true,verified:true,is_admin:false,user_id:'demo-tamsin',display_name:'Tamsin Hearthwood',main_character_id:105,characters,player_links:links,csrf:'demo-read-only',message:'Fictional demonstration account. No real sign-in has taken place.',discord:{configured:false,linked:false},demo:true};
+  const me={signed_in:true,verified:true,is_admin:true,user_id:'demo-tamsin',display_name:'Tamsin Hearthwood',ownership_checked_at:observedAt,main_character_id:105,characters,player_links:links,csrf:'demo-read-only',message:'Fictional demonstration account. No real sign-in has taken place.',discord:{configured:true,linked:true,requester_dm:true,crafter_dm:false},demo:true};
   return {members,links,hall,status,me};
 }
 function publicCount(fixtures){return {guild_name:CONFIG.guild.name,region:CONFIG.guild.region.toUpperCase(),ruleset:CONFIG.guild.ruleset.name,game:'World of Warcraft Forever',member_count:fixtures.members.length,roster_member_count:fixtures.members.length,profile_verified_count:0,roster_observed_at:observedAt,demo:true};}
@@ -68,11 +70,32 @@ function history(fixtures,id){
   const baseline={kind:'baseline',title:'Recorded baseline',detail:'Fictional demonstration history.',baseline:true,observed_at:'2026-11-08T18:00:00.000Z'};
   return {activity:changes.map((change,index)=>({id:'fictional-'+index,character_id:member.id,title:member.name+' · '+change.title,detail:change.detail||'',observed_at:change.observed_at})),observations:[...changes,baseline],snapshots:[],note:'Demo data: fictional dated changes, shown using the same interface as the real guild tracker.',demo:true};
 }
+function armory(fixtures,id){
+  const member=fixtures.members.find(member=>member.id===id);if(!member)return null;
+  const items=[
+    {id:8101,slot:'CHEST',slot_name:'Chest',name:'Traveler’s Linen Tunic',quality:'UNCOMMON',item_level:18,item_subclass:'Cloth',inventory_type:'Chest',required_level:12,binding:'Soulbound',stats:[{display:'+4 Stamina'},{display:'+5 Intellect'}],enchantments_status:'not_returned',enchantments:[]},
+    {id:8102,slot:'BACK',slot_name:'Back',name:'Woodland Wanderer’s Cloak',quality:'UNCOMMON',item_level:17,item_subclass:'Cloth',inventory_type:'Back',required_level:11,binding:'Binds when equipped',stats:[{display:'+3 Stamina'}],enchantments_status:'observed',enchantments:[]},
+    {id:8103,slot:'HANDS',slot_name:'Hands',name:'Herbalist’s Handwraps',quality:'RARE',item_level:21,item_subclass:'Cloth',inventory_type:'Hands',required_level:16,stats:[{display:'+4 Intellect'},{display:'+2 Spirit'}],enchantments_status:'not_returned',enchantments:[]},
+    {id:8104,slot:'FEET',slot_name:'Feet',name:'Soft Woodland Boots',quality:'UNCOMMON',item_level:16,item_subclass:'Cloth',inventory_type:'Feet',required_level:10,stats:[{display:'+3 Stamina'}],enchantments_status:'observed',enchantments:[{name:'Minor Stamina'}]},
+    {id:8105,slot:'MAIN_HAND',slot_name:'Main hand',name:'Oakheart Walking Staff',quality:'RARE',item_level:23,item_subclass:'Staff',inventory_type:'Two-Hand',required_level:18,weapon_damage:'23–35 Damage',weapon_speed:3.2,stats:[{display:'+6 Intellect'},{display:'+4 Spirit'}],enchantments_status:'not_returned',enchantments:[]}
+  ];
+  const section=(data,status='verified')=>({status,data,observed_at:data?observedAt:null,checked_at:observedAt,note:'Fictional demonstration data; no Blizzard API request was made.'});
+  return {character_id:id,sections:{equipment:section({items,equipped_item_level:19}),statistics:section({values:[{name:'Health',value:724},{name:'Mana',value:1050},{name:'Stamina',value:49},{name:'Intellect',value:65},{name:'Spirit',value:58},{name:'Armor',value:210},{name:'Spell critical chance',value:4.2,unit:'%'}]}),media:section({assets:[{key:'main',url:`/api/characters/${id}/armory/media/main`}]})},note:'All equipment, statistics and artwork in this preview are fictional. Missing slots are not inferred.',demo:true};
+}
+function adminOverview(fixtures){
+  return {checked_at:observedAt,health:{blizzard:{configured:true,status:'observed',last_success_at:observedAt,last_attempt_at:observedAt,failed_endpoints:0},scheduler:{status:'healthy',last_completed_at:observedAt},roster:{status:'published',observed_at:observedAt,completed_at:'2026-11-09T09:02:00.000Z'},discord:{configured:true,status:'configured',pending:1,failed:0,delivered:12,last_delivered_at:observedAt},backups:{status:'managed_by_host',note:'Fictional preview: backup availability is managed by the host; no restore check has been performed.'}},counts:{characters:fixtures.members.length,roster_characters:fixtures.members.length,profile_verified_characters:0,site_accounts:8,current_member_accounts:8,discord_linked_accounts:7,members_without_discord:1,unclaimed_characters:0},refresh:{due:1,waiting:8,unpublished:0,stale:0,failures:0,next_at:'2026-11-09T09:15:00.000Z'},attention:[{kind:'discord_unlinked',severity:'info',title:'Verified member accounts without linked Discord',count:1}],imports:[{observed_at:observedAt,completed_at:'2026-11-09T09:02:00.000Z',duration_ms:120000,member_count:9,joined:1,left:0,level_changes:3,rank_changes:1,baseline:false,status:'published'},{observed_at:'2026-11-09T08:45:00.000Z',completed_at:'2026-11-09T08:47:00.000Z',duration_ms:120000,member_count:8,joined:0,left:1,level_changes:2,rank_changes:0,baseline:false,status:'published'},{observed_at:'2026-11-09T08:30:00.000Z',completed_at:'2026-11-09T08:32:00.000Z',duration_ms:120000,member_count:9,joined:0,left:0,level_changes:1,rank_changes:0,baseline:false,status:'published'}],import_history_note:'Fictional demonstration imports. Real history begins when this feature is installed; changes reflect returned roster snapshots.',demo:true};
+}
 function apiData(path,url,fixtures){
   if(path==='/api/public')return publicCount(fixtures);
   if(path==='/api/status')return fixtures.status;
   if(path==='/api/members')return {generation,revision:generation,members:fixtures.members,next:null,demo:true};
   if(path==='/api/me')return fixtures.me;
+  if(path==='/api/admin/overview')return adminOverview(fixtures);
+  if(path==='/api/guild/ranks')return {labels:rankLabels,ranks:Object.entries(rankLabels).map(([rank,name])=>({rank:Number(rank),name,count:fixtures.members.filter(member=>member.rank===Number(rank)).length})),source:'suggested',demo:true};
+  if(path==='/api/admin/status')return {...fixtures.status,configured:true,scheduler:{last_completed:observedAt},limits:['Fictional demonstration data; no provider API is called.'],refresh_policy:'Demo observations are fixed fictional fixtures.',demo:true};
+  if(path==='/api/evidence')return {endpoints:[],demo:true};
+  if(path==='/api/admin/discord')return {configured:false,client_id:'',guild_id:'',events_channel_id:'',craft_requests_channel_id:'',client_secret_set:false,bot_token_set:false,queue:[],verification:null,invite_url:null,callback:CONFIG.site.origin+'/auth/discord/callback',demo:true};
+  if(path==='/api/admin/character-mappings')return {mappings:[],characters:fixtures.members,note:'Fictional preview; no live Discord identities are present.',demo:true};
   if(path==='/api/hall')return {...fixtures.hall,demo:true};
   if(path==='/api/history')return history(fixtures,Number(url.searchParams.get('character')));
   if(path==='/api/quests/areas')return {areas:[{id:40,name:'Westfall'},{id:12,name:'Elwynn Forest'}],observed_at:observedAt,demo:true};
@@ -83,6 +106,7 @@ function apiData(path,url,fixtures){
   }
   const talents=path.match(/^\/api\/characters\/(\d+)\/talents$/);
   if(talents){const id=Number(talents[1]),member=fixtures.members.find(member=>member.id===id);return {character_id:id,status:'verified',observed_at:observedAt,trees:member?[{id:1,name:member.talents[0].name,points:member.talents[0].points,layout_available:false,nodes:[{id:1,name:'A steady hand',rank:3,max_rank:5,description:'A fictional talent used for demonstrating the character folio.'},{id:2,name:'An adventurer’s resolve',rank:2,max_rank:5,description:'A fictional demonstration talent.'}]}]:[],note:'Demo data only.',demo:true};}
+  const characterArmory=path.match(/^\/api\/characters\/(\d+)\/armory$/);if(characterArmory)return armory(fixtures,Number(characterArmory[1]));
   return null;
 }
 function demoHTML(html){return html.replace('</head>','<link rel="stylesheet" href="/demo.css"></head>').replace(/(<body\b[^>]*>)/,'$1<aside class="demo-banner" role="status">Demo data · Fictional characters and activity · Read-only preview</aside>');}
@@ -111,6 +135,8 @@ export async function startDemoServer(options={}){
       const url=new URL(request.url,'http://127.0.0.1'),path=decodeURIComponent(url.pathname),head=request.method==='HEAD';
       if(path==='/healthz'){reply(response,200,{status:'ok',demo:true},undefined,head);return;}
       if(path==='/demo.css'){reply(response,200,demoCSS,types['.css'],head);return;}
+      const portrait=path.match(/^\/api\/characters\/(\d+)\/armory\/media\/main$/);
+      if(portrait){const known=fixtures.members.some(member=>member.id===Number(portrait[1]));reply(response,known?200:404,known?demoPortrait:{error:'Fictional character not found',demo:true},known?types['.svg']:undefined,head);return;}
       if(path.startsWith('/auth/')){reply(response,200,demoHTML('<!doctype html><html><head><meta charset="utf-8"><title>Read-only guild demo</title></head><body><main><h1>Read-only demonstration</h1><p>'+readonlyMessage+'</p><p>No Battle.net or Discord account is connected.</p><a href="/guild">Return to the demo guildhall</a></main></body></html>'),types['.html'],head);return;}
       if(path.startsWith('/api/')){const data=apiData(path,url,fixtures);reply(response,data?200:404,data||{error:'This endpoint is unavailable in the read-only demo.',demo:true},undefined,head);return;}
       const route=path==='/'||path==='/index.html'?'/welcome.html':path==='/guild'||path==='/guild/'?'/index.html':path;
