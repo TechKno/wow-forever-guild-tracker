@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="{{LANGUAGE}}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{GUILD_NAME}} · {{SITE_TITLE}}</title>
+  <meta name="description" content="{{DESCRIPTION}}">
+  <meta name="theme-color" content="#2b231b">
+  <link rel="canonical" href="{{SITE_ORIGIN}}/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="{{GUILD_NAME}} · {{SITE_TITLE}}">
+  <meta property="og:description" content="{{DESCRIPTION}}">
+  <meta property="og:url" content="{{SITE_ORIGIN}}/">
+  <meta property="og:image" content="{{HERO_URL}}">
+  <meta property="og:image:alt" content="A fantasy guildhall beneath mountains and stars.">
+  <link rel="icon" type="{{LOGO_TYPE}}" href="{{LOGO}}">
+  <link rel="stylesheet" href="/welcome.css">
+  <script src="/welcome.js" defer></script>
+<link rel="stylesheet" href="/brand.css"></head>
+<body class="welcome-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="{{GUILD_NAME}} home"><img src="{{LOGO}}" width="72" height="80" alt=""><span>{{GUILD_NAME}}<small>{{REGION_RULESET_UPPER}}</small></span></a>
+    <nav aria-label="Main navigation"><a class="about-link" href="#about">Our company</a><a class="header-signin" href="/guild">Member sign in <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main id="main">
+    <aside id="eligibility-notice" class="eligibility-notice" role="status" hidden><div><strong>A guild character is needed to enter.</strong><p>Battle.net has not verified a current {{GUILD_NAME}} character for this account. If you used a different account, try signing in again.</p></div><a href="/auth/login">Try Battle.net again <span aria-hidden="true">↗</span></a></aside>
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-copy"><p class="eyebrow"><span aria-hidden="true">✦</span> {{GUILD_NAME_UPPER}}</p><h1 id="hero-title">Adventures with<br><em>{{GUILD_NAME}}</em>.</h1><p class="hero-tagline">{{TAGLINE}}</p><p class="hero-intro">{{DESCRIPTION}}</p><div class="hero-action"><a class="button-primary" href="/guild">Enter the guildhall <span aria-hidden="true">→</span></a><p>Sign in with Battle.net.<br>For verified guild members.</p></div></div>
+      <div class="hero-picture"><figure><img class="welcome-art" src="{{HERO}}" width="1600" height="800" fetchpriority="high" alt="An illustrated fantasy guildhall with warm lanterns, mountains and stars."><figcaption><span aria-hidden="true">✦</span> {{MOTTO}}</figcaption></figure><div class="roster-card"><div class="roster-total"><strong id="public-member-count" aria-live="polite">—</strong><div><span>Guild characters</span><small>Verified guild characters,<br> including mains and alts</small></div></div><p id="public-roster-status">Checking the guild roster…</p></div></div>
+    </section>
+    <div class="guild-details" aria-label="Guild setting"><span>World of Warcraft Forever</span><span>{{REGION}}</span><span>{{RULESET}}</span><span>{{MOTTO}}</span></div>
+    <section class="about-company" id="about" aria-labelledby="about-title"><div class="about-heading"><p class="eyebrow">PULL UP A CHAIR</p><h2 id="about-title">Good company makes<br>the better story.</h2></div><div class="about-intro"><p>Every guild needs a place to gather between adventures. Ours brings the practical bits together: characters and alts, learned recipes, crafting requests, and the next party to organise.</p><p>Step into the guildhall to see what the company is planning.</p></div></section>
+    <section class="company-features" aria-label="Inside the guildhall"><article><span class="feature-number" aria-hidden="true">I</span><h3>Gather your party</h3><p>Plan a dungeon run or a guild event, then see who is joining the adventure.</p></article><article><span class="feature-number" aria-hidden="true">II</span><h3>Made by the guild</h3><p>Explore observed recipes, find a guild crafter, and work out the materials together.</p></article><article><span class="feature-number" aria-hidden="true">III</span><h3>One player, many tales</h3><p>Bring mains and alts together, and get to know the characters behind the names.</p></article></section>
+    <section class="guildhall-invitation" aria-labelledby="guildhall-title"><div><p class="eyebrow">THE NEXT CHAPTER IS INSIDE</p><h2 id="guildhall-title">Meet us in the guildhall.</h2><p>Battle.net confirms your current guild characters when you sign in.</p></div><a class="button-light" href="/guild">Enter the guildhall <span aria-hidden="true">→</span></a></section>
+  </main>
+  <footer class="site-footer"><div><strong>{{GUILD_NAME}}</strong><span>{{MOTTO}}</span></div><p>{{REGION_RULESET}} · World of Warcraft Forever</p><a href="/privacy.html">Privacy &amp; your data</a></footer>
+</body>
+</html>

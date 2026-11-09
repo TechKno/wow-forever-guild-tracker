@@ -1,0 +1,32 @@
+{
+  "name": "wow-forever-guild-tracker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "npm run build && node scripts/deploy-cloudflare.mjs",
+    "test": "node scripts/run-tests.mjs",
+    "check": "node scripts/check-syntax.mjs",
+    "build": "node scripts/build-branding.mjs",
+    "check:release": "node scripts/check-release.mjs",
+    "configure:cloudflare": "node scripts/configure-cloudflare.mjs",
+    "admin:cloudflare": "node scripts/admin-cloudflare.mjs",
+    "start": "node self-host/start.mjs",
+    "selfhost:migrate": "node self-host/migrate.mjs",
+    "selfhost:admin": "node self-host/admin.mjs",
+    "demo": "node scripts/build-branding.mjs && node scripts/preview-demo.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.158.0"
+  },
+  "description": "A customisable WoW Forever guild dashboard for Cloudflare Workers or Docker.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/TechKno/wow-forever-guild-tracker.git"
+  }
+}

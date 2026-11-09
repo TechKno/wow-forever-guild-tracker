@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 144" role="img" aria-labelledby="title desc">
+  <title id="title">Guild Ledger crest</title><desc id="desc">An original gold shield with an open book, a star and crossed quills.</desc>
+  <defs><linearGradient id="gold" x2=".8" y2="1"><stop stop-color="#f1d79b"/><stop offset="1" stop-color="#a67d38"/></linearGradient><linearGradient id="wood" x2="0" y2="1"><stop stop-color="#345343"/><stop offset="1" stop-color="#1e352d"/></linearGradient></defs>
+  <path d="M16 20 64 5l48 15v55c0 26-25 47-48 59-23-12-48-33-48-59Z" fill="url(#gold)" stroke="#805e29" stroke-width="3"/>
+  <path d="M23 25 64 12l41 13v49c0 21-21 41-41 52-20-11-41-31-41-52Z" fill="url(#wood)" stroke="#e4c989" stroke-width="2"/>
+  <path d="m64 25 3 8 8 3-8 3-3 8-3-8-8-3 8-3Z" fill="#ead099"/>
+  <g stroke="#b59353" stroke-linecap="round" stroke-width="4"><path d="m31 101 62-49M35 51l58 51"/><path d="m28 104 12-5m48-1 9 7"/></g>
+  <path d="M32 56c12-3 22 0 32 6 10-6 20-9 32-6v37c-13-2-22 0-32 6-10-6-19-8-32-6Z" fill="#f8edcf" stroke="#c7a765" stroke-width="3"/>
+  <path d="M64 62v36M41 67l14 4m-14 5 14 4m-14 5 14 4m18-18 14-4m-14 13 14-4m-14 13 14-4" fill="none" stroke="#9c793e" stroke-linecap="round" stroke-width="2"/>
+  <path d="m20 111 44 8 44-8-4 17-40 10-40-10Z" fill="#d8ba77" stroke="#805e29" stroke-width="2"/>
+  <path d="m48 124 16 4 16-4" fill="none" stroke="#765825" stroke-linecap="round" stroke-width="3"/>
+</svg>

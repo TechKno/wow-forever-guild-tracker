@@ -1,0 +1,10 @@
+{$SITE_HOSTNAME} {
+  reverse_proxy app:8080 {
+    # This value comes from Caddy's actual connection, not a caller header.
+    header_up X-Guild-Client-IP {http.request.remote.host}
+    header_up -CF-Connecting-IP
+    header_up -Forwarded
+    header_up -X-Forwarded-For
+    header_up -X-Forwarded-Host
+  }
+}

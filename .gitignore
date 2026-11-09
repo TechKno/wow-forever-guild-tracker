@@ -1,0 +1,16 @@
+node_modules/
+.wrangler/
+.git/
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
+*.log
+credentials*
+secrets/
+data/
+backups/
+*.sqlite*
+*.db*
+*.zip
+wrangler.jsonc

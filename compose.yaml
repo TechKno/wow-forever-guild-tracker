@@ -1,0 +1,50 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /app/data
+      HOST: 0.0.0.0
+      PORT: "8080"
+      TRUSTED_PROXY_ADDRESSES: 172.30.0.2
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - tracker_data:/app/data
+    networks:
+      guild_net:
+        ipv4_address: 172.30.0.3
+    stop_grace_period: 90s
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    environment:
+      SITE_HOSTNAME: ${SITE_HOSTNAME:?Set SITE_HOSTNAME in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./self-host/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      guild_net:
+        ipv4_address: 172.30.0.2
+networks:
+  guild_net:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+volumes:
+  tracker_data:
+  caddy_data:
+  caddy_config:

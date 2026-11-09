@@ -1,0 +1,3 @@
+# Local development only. Use wrangler secret put for deployed credentials.
+BLIZZARD_CLIENT_ID=
+BLIZZARD_CLIENT_SECRET=

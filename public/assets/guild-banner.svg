@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 800" role="img" aria-labelledby="title desc">
+  <title id="title">The guildhall at dusk</title><desc id="desc">An original illustration of a warmly lit guildhall beside mountains, pine trees and a winding path.</desc>
+  <defs>
+    <linearGradient id="sky" x2="0" y2="1"><stop stop-color="#1e3d43"/><stop offset="1" stop-color="#b5b08d"/></linearGradient>
+    <linearGradient id="earth" x2="0" y2="1"><stop stop-color="#4b6550"/><stop offset="1" stop-color="#283e33"/></linearGradient>
+    <linearGradient id="roof" x2="0" y2="1"><stop stop-color="#695144"/><stop offset="1" stop-color="#3a302b"/></linearGradient>
+    <radialGradient id="light"><stop stop-color="#f3ce78" stop-opacity=".55"/><stop offset="1" stop-color="#f3ce78" stop-opacity="0"/></radialGradient>
+    <pattern id="tiles" width="44" height="24" patternUnits="userSpaceOnUse"><path d="M0 23h44M22 0v23" fill="none" stroke="#2f2928" stroke-opacity=".3" stroke-width="2"/></pattern>
+    <g id="pine"><path d="M0 0 42 80H25l32 53H35l36 61H-71l36-61h-22l32-53h-17Z" fill="#263f36"/><path d="M-7 184H7v52H-7Z" fill="#3b382b"/></g>
+    <g id="window"><path d="M0 0h54v73H0Z" fill="#e9ba62" stroke="#594432" stroke-width="7"/><path d="M27 0v73M0 37h54" stroke="#715335" stroke-width="5"/></g>
+  </defs>
+  <path fill="url(#sky)" d="M0 0h1600v800H0Z"/>
+  <g fill="#f7e5b7"><circle cx="204" cy="94" r="3"/><circle cx="396" cy="57" r="2"/><circle cx="1348" cy="113" r="3"/><circle cx="1196" cy="58" r="2"/><path d="m1034 108 3 10 10 3-10 3-3 10-3-10-10-3 10-3Z"/><path d="m564 102 2 7 7 2-7 2-2 7-2-7-7-2 7-2Z"/></g>
+  <circle cx="1278" cy="129" r="49" fill="#d8cf9b" opacity=".65"/><circle cx="1295" cy="113" r="49" fill="#35565a"/>
+  <path d="M0 448 173 256l114 111L481 178l189 209L876 212l198 209 209-217 317 263v171H0Z" fill="#718783" opacity=".66"/>
+  <path d="m372 298 109-120 100 111-99-41Z m851-29 60-65 98 81-88-25Z" fill="#d2d2b7" opacity=".65"/>
+  <path d="M0 496 277 396l218 91 296-89 299 105 287-124 223 109v312H0Z" fill="#527064"/>
+  <path d="M0 570c260-87 504-12 759-46 315-42 588-50 841 17v259H0Z" fill="url(#earth)"/>
+  <g opacity=".72"><use href="#pine" transform="translate(108 342) scale(.8)"/><use href="#pine" transform="translate(244 351) scale(.65)"/><use href="#pine" transform="translate(1432 337) scale(.95)"/><use href="#pine" transform="translate(1520 420) scale(.65)"/></g>
+  <path d="M682 614c46 18 74 47 62 71-16 31-94 52-139 115h385c-76-81-155-89-163-130-4-21 5-42 13-59Z" fill="#a59570"/>
+  <path d="M713 625c42 20 67 43 52 67-12 20-49 36-75 59" fill="none" stroke="#c8b78c" stroke-opacity=".45" stroke-width="13"/>
+  <ellipse cx="793" cy="590" rx="345" ry="193" fill="url(#light)"/>
+  <path d="M445 372h638v237H445Z" fill="#c9b68b" stroke="#544738" stroke-width="8"/>
+  <path d="M419 381 562 226h432l121 155Z" fill="url(#roof)" stroke="#3e342c" stroke-width="9"/>
+  <path d="M429 373 566 239h423l110 134Z" fill="url(#tiles)"/>
+  <path d="M602 300 775 171l178 129v318H602Z" fill="#d8c59b" stroke="#5a4936" stroke-width="8"/>
+  <path d="m574 312 199-163 207 163-30 8-177-137-173 137Z" fill="#503d31" stroke="#3b3029" stroke-width="7"/>
+  <path d="M763 192h22v422h-22ZM606 369h343v20H606Zm0 118h343v18H606ZM448 475h153v18H448Zm502 0h131v18H950Z" fill="#6c5339"/>
+  <path d="m608 305 147 63m33 0 157-63M613 506l141 97m36 0 148-97" fill="none" stroke="#71593e" stroke-width="13"/>
+  <path d="M718 612V492c0-77 113-77 113 0v120Z" fill="#4e4533" stroke="#8f7043" stroke-width="10"/>
+  <path d="M735 606V494c0-53 79-53 79 0v112Z" fill="#bc9554"/><path d="M774 455v152" stroke="#6b5235" stroke-width="6"/><circle cx="798" cy="554" r="5" fill="#4f4430"/>
+  <use href="#window" transform="translate(482 407)"/><use href="#window" transform="translate(1005 407)"/><use href="#window" transform="translate(663 319) scale(.85)"/><use href="#window" transform="translate(831 319) scale(.85)"/>
+  <path d="M1006 257v-90h51v115Z" fill="#806a54" stroke="#4d4032" stroke-width="7"/><path d="M999 166h65v16h-65Z" fill="#504536"/>
+  <path d="M1031 146c-29-39 28-37 6-76-8-15-21-14-13-35" fill="none" stroke="#d4d2b3" stroke-opacity=".3" stroke-width="21" stroke-linecap="round"/>
+  <g fill="#e7bf72" stroke="#604a32" stroke-width="5"><path d="M653 471h28v49h-28Z"/><path d="M865 471h28v49h-28Z"/></g>
+  <g fill="url(#light)"><circle cx="667" cy="496" r="65"/><circle cx="879" cy="496" r="65"/></g>
+  <path d="M465 610h627v20H465Z" fill="#514632"/><path d="M690 621h172v19H690Z" fill="#b8a17b"/><path d="M675 640h201v16H675Z" fill="#8f805f"/>
+  <g><use href="#pine" transform="translate(95 412) scale(1.5)"/><use href="#pine" transform="translate(1480 382) scale(1.7)"/></g>
+  <g fill="#d3bb80" opacity=".6"><circle cx="419" cy="657" r="3"/><circle cx="1128" cy="648" r="2"/><circle cx="1152" cy="671" r="3"/><circle cx="331" cy="707" r="2"/></g>
+  <path d="M0 754c224-51 401-26 575 46H0Zm1015 46c241-76 393-75 585-32v32Z" fill="#21392f"/>
+</svg>

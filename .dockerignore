@@ -1,0 +1,17 @@
+.git
+.github
+node_modules
+.wrangler
+.env*
+.dev.vars*
+secrets
+data
+backups
+*.sqlite*
+*.db*
+*.log
+*.zip
+tests
+docs
+publication-*
+scripts/preview-demo.mjs
