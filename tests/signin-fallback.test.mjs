@@ -68,12 +68,24 @@ test('a roster-missing account-owned character gets access only after exact indi
     assert.doesNotThrow(()=>requireMember(result.user));
     assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM membership WHERE character_id=91').first()).n,0,'Fallback must never manufacture a primary Blizzard roster row');
     assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM profile_members WHERE character_id=91').first()).n,1);
+    assert.equal((await f.DB.prepare("SELECT COUNT(*) n FROM activity WHERE kind='joined' AND character_id=91").first()).n,1);
     assert.equal((await worker.fetch(result.request('/api/members'),f.env)).status,200);
     const userRow=await f.DB.prepare('SELECT * FROM users WHERE id=?').bind(result.user.id).first();
     assert.equal(userRow.main_character_id,91);assert.equal(userRow.ownership_status,'verified');
     const fields=['users','sessions','character_links','profile_members','state'].flatMap(table=>f.DB.raw.prepare('SELECT * FROM '+table).all());
     assert(!JSON.stringify(fields).includes('fixture-user-token-do-not-store'));assert(!JSON.stringify(fields).includes('fixture-client-secret'));
   }
+});
+
+test('a verified sign-in fallback announces its first guild observation once across repeated sign-ins',async()=>{
+  const f=await fixture(),first=await signIn(f);assert.equal(first.user.verified,true);
+  const joined=async()=>(await f.DB.prepare("SELECT * FROM activity WHERE kind='joined' AND character_id=91").all()).results;
+  const initial=await joined();assert.equal(initial.length,1);assert.equal(initial[0].title,'New Adventurer was verified in the guild');
+  assert.match(initial[0].detail,/Battle.net ownership/);assert.match(initial[0].detail,/not an exact in-game join time/);
+  const proof=JSON.parse((await f.DB.prepare('SELECT data FROM profile_members WHERE character_id=91').first()).data);
+  assert.equal(initial[0].observed_at,proof.membership_verified_at);
+  const second=await signIn(f);assert.equal(second.user.verified,true);
+  assert.deepEqual(await joined(),initial,'Signing in again must not re-date or repeat the original guild observation');
 });
 
 test('wrong guild IDs, same-name impostors, wrong rulesets, missing guilds and mismatched character identity deny access',async()=>{
@@ -92,6 +104,7 @@ test('wrong guild IDs, same-name impostors, wrong rulesets, missing guilds and m
     assert.throws(()=>requireMember(result.user),error=>error.status===403);
     assert.equal((await worker.fetch(result.request('/api/members'),f.env)).status,403);
     assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM profile_members').first()).n,0);
+    assert.equal((await f.DB.prepare("SELECT COUNT(*) n FROM activity WHERE kind='joined'").first()).n,0);
   }
 });
 
@@ -99,6 +112,7 @@ test('unpublished profiles and provider failures cannot admit a roster-missing a
   for(const value of [null,new Error('Synthetic provider failure')]){
     const f=await fixture(),result=await signIn(f,{profiles:new Map([[candidate.slug,value]])});
     assert.equal(result.user.verified,false);assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM profile_members').first()).n,0);
+    assert.equal((await f.DB.prepare("SELECT COUNT(*) n FROM activity WHERE kind='joined'").first()).n,0);
   }
 });
 
@@ -151,7 +165,21 @@ test('proof and character-link writes are atomic and a failed batch cannot grant
   const result=await signIn(f);assert.equal(result.user.verified,false);
   assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM profile_members').first()).n,0);
   assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM character_links').first()).n,0);
+  assert.equal((await f.DB.prepare("SELECT COUNT(*) n FROM activity WHERE kind='joined'").first()).n,0);
   assert.equal((await f.DB.prepare('SELECT ownership_status FROM users WHERE id=?').bind(result.user.id).first()).ownership_status,'unavailable');
+});
+
+test('a failure after the fallback join insertion rolls back the announcement with its proof and ownership links',async()=>{
+  const f=await fixture(),originalBatch=f.DB.batch.bind(f.DB);let includedJoin=false;
+  f.DB.batch=statements=>{
+    includedJoin=statements.some(statement=>/INSERT OR IGNORE INTO activity/.test(statement.sql));
+    return originalBatch([...statements,f.DB.prepare('INSERT INTO missing_signin_test_table VALUES(1)')]);
+  };
+  const result=await signIn(f);assert(includedJoin,'The announcement must be in the same batch as the verified ownership proof');
+  assert.equal(result.user.verified,false);
+  assert.equal((await f.DB.prepare("SELECT COUNT(*) n FROM activity WHERE kind='joined'").first()).n,0);
+  assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM profile_members').first()).n,0);
+  assert.equal((await f.DB.prepare('SELECT COUNT(*) n FROM character_links').first()).n,0);
 });
 
 test('primary roster members keep their access without needing a profile fallback',async()=>{

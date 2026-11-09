@@ -1,5 +1,6 @@
 import {mergeMember,GUILD} from './logic.mjs';
 import {candidateFromAccount,validateProfileMember,profileMemberStatement} from './guild-membership.mjs';
+import {profileJoinedStatement} from './roster-progress.mjs';
 import {ORIGIN,LEGACY_ORIGIN,CALLBACK,isSiteOrigin,RULESET_LABEL,providerURL,ensureDeploymentIdentity} from './config.mjs';
 export {ORIGIN,LEGACY_ORIGIN,CALLBACK,isSiteOrigin};
 const encoder=new TextEncoder();
@@ -166,6 +167,7 @@ export async function authRoute(request,env){
         if(scanNext!==null)statements.push(env.DB.prepare('INSERT OR REPLACE INTO state(key,value) VALUES(?,?)').bind(scanKey,String(scanNext)));
         statements.push(env.DB.prepare('UPDATE users SET ownership_status=\'verified\',ownership_checked=?,updated_at=? WHERE id=?').bind(epoch(),created,user.id));
         if(!owned.includes(user.main_character_id)&&owned.length)statements.push(env.DB.prepare('UPDATE users SET main_character_id=? WHERE id=?').bind(owned[0],user.id));
+        if(proofs.length)statements.push(profileJoinedStatement(env,user.id));
         // Proof, ownership and character links become visible in one atomic commit.
         await env.DB.batch(statements);
         ownershipCommitted=true;

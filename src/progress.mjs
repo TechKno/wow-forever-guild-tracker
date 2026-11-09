@@ -112,15 +112,21 @@ function legacyRecordedEvents(snapshot){
 function retainedEvents(snapshot){
   return snapshot.observation_events_schema===1&&Array.isArray(snapshot.observation_events)&&snapshot.observation_events.length&&snapshot.observation_events.every(event=>event&&['level','skill','recipe','profession','coverage','baseline'].includes(event.kind)&&typeof event.title==='string'&&(event.detail===undefined||typeof event.detail==='string'))?snapshot.observation_events:null;
 }
-export function progressStatements(env,member,old,data){
+export function progressStatements(env,member,old,data,options={}){
   const fresh=key=>data[key+'_status']==='verified';
   const profileFresh=fresh('profile'),professionsFresh=fresh('professions');
-  if(!profileFresh&&!professionsFresh)return [];
-  const at=new Date().toISOString(),statements=[];
+  const suppliedLevel=Number.isSafeInteger(options.levelAfter)&&options.levelAfter>0;
+  if(!profileFresh&&!professionsFresh&&!suppliedLevel)return [];
+  const at=options.observedAt||new Date().toISOString(),statements=[];
+  const before=previousObservation(old),after={...before};
+  if(Number.isSafeInteger(options.levelBefore)&&options.levelBefore>0){before.levelKnown=true;before.level=options.levelBefore;after.levelKnown=true;after.level=options.levelBefore;}
+  if(profileFresh&&data.profile&&Object.hasOwn(data.profile,'level')){after.levelKnown=true;after.level=data.profile.level??null;}
+  if(suppliedLevel){after.levelKnown=true;after.level=options.levelAfter;}
+  if(professionsFresh&&Array.isArray(data.professions)){after.professionsKnown=true;after.professions=professionValues(data.professions);}
   const add=(kind,title,detail='')=>statements.push(env.DB.prepare('INSERT INTO activity(id,character_id,kind,title,detail,observed_at) VALUES(?,?,?,?,?,?)')
     .bind(crypto.randomUUID(),member.id,kind,title,detail,at));
-  if(profileFresh&&old?.profile_status==='verified'&&Number.isFinite(old.profile?.level)&&data.profile.level>old.profile.level)
-    add('level',`${member.name} reached level ${data.profile.level}`,`Previously observed at level ${old.profile.level}`);
+  if((profileFresh||suppliedLevel)&&before.levelKnown&&Number.isFinite(before.level)&&after.level>before.level)
+    add('level',`${member.name} reached level ${after.level}`,`Previously observed at level ${before.level}${options.levelSource==='roster'?' · Blizzard guild roster':''}`);
   if(professionsFresh&&old?.professions_at){
     const previous=new Map((old.professions||[]).map(p=>[key(p),p]));
     for(const p of data.professions||[]){
@@ -133,14 +139,12 @@ export function progressStatements(env,member,old,data){
     }
   }
   if(statements.length>18)statements.length=18;
-  const before=previousObservation(old),after={...before};
-  if(profileFresh&&data.profile&&Object.hasOwn(data.profile,'level')){after.levelKnown=true;after.level=data.profile.level??null;}
-  if(professionsFresh&&Array.isArray(data.professions)){after.professionsKnown=true;after.professions=professionValues(data.professions);}
   const changes=observationChanges(before,after);
   if(changes.length){
     const levelChanged=after.levelKnown&&(!before.levelKnown||before.level!==after.level),professionsChanged=after.professionsKnown&&(!before.professionsKnown||!equal(before.professions,after.professions));
     statements.push(env.DB.prepare('INSERT OR IGNORE INTO snapshots(character_id,observed_at,data) VALUES(?,?,?)')
-      .bind(member.id,at,JSON.stringify({level:levelChanged?after.level:null,profile_observed_at:levelChanged?data.profile_at||at:null,
+      .bind(member.id,at,JSON.stringify({level:levelChanged?after.level:null,profile_observed_at:levelChanged&&options.levelSource!=='roster'?data.profile_at||at:null,
+        ...(levelChanged?{level_source:options.levelSource||'profile',level_observed_at:options.levelObservedAt||data.profile_at||at}:{}),
         professions:professionsChanged?data.professions:null,professions_observed_at:professionsChanged?data.professions_at||at:null,
         change_schema:1,changes,baseline:!before.levelKnown&&!before.professionsKnown,
         observation_events_schema:1,observation_events:granularObservationEvents(before,after)})));

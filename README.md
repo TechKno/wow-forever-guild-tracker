@@ -30,6 +30,7 @@ Screenshots are captured from the real interface using the isolated [demo previe
 - Craft requests with selected crafters, optional Discord DMs, a fallback channel and completion reactions.
 - Dungeon/event planning, party roles, Discord announcements and cleanup of completed/cancelled posts.
 - Dated character changes and individual recipe observations; identical refreshes do not clutter the log.
+- Chronicle entries include verified roster level-ups and newly observed members, even when character profiles are unavailable. Dates are observation times, not exact in-game level-up or join times.
 - Discord display names, administrator-managed character mappings and member roleplay profiles.
 - Battle.net ownership plus current guild membership, administrator-only settings, CSRF/origin checks and rate limits.
 

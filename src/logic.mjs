@@ -1,5 +1,6 @@
 import {CONFIG,GUILD,SLUG,LOCALE,RULESET_ID,RULESET_NAME,RULESET_LABEL,providerURL,ensureDeploymentIdentity} from './config.mjs';
 import {progressStatements} from './progress.mjs';
+import {rosterProgressStatements} from './roster-progress.mjs';
 import {normalizeTalentBuild} from './talent-data.mjs';
 import {validateProfileMember,profileMemberRefreshStatement,profileMemberDeleteStatement} from './guild-membership.mjs';
 import {recheckOneProfileMember} from './profile-membership-refresh.mjs';
@@ -138,10 +139,13 @@ export async function state(env,key) {
 async function saveState(env,key,value) {
   return env.DB.prepare('INSERT OR REPLACE INTO state(key,value) VALUES(?,?)').bind(key,JSON.stringify(value)).run();
 }
-async function syncUpdate(env,owner,fields) {
+function syncUpdateStatement(env,owner,fields) {
   const entries=Object.entries({...fields,updated:timestamp()});
-  await env.DB.prepare(`UPDATE sync SET ${entries.map(([k])=>`${k}=?`).join(',')} WHERE id=1 AND lease=?`)
-    .bind(...entries.map(([,v])=>v),owner).run();
+  return env.DB.prepare(`UPDATE sync SET ${entries.map(([k])=>`${k}=?`).join(',')} WHERE id=1 AND lease=?`)
+    .bind(...entries.map(([,v])=>v),owner);
+}
+async function syncUpdate(env,owner,fields) {
+  await syncUpdateStatement(env,owner,fields).run();
 }
 export function mergeMember(roster,details={}) {
   const proofAt=Date.parse(roster.membership_verified_at||''),previousAttempt=Date.parse(details.profile_checked_at||details.profile_at||'1970-01-01T00:00:00Z');
@@ -308,7 +312,14 @@ async function refreshCharacter(env,row) {
     }
   }
   const result=profileError?'profile_unavailable':detailAttempted?(data.professions_status==='verified'?'details_refreshed':'details_unavailable'):'activity_checked';
-  const statements=progressStatements(env,member,prior,data);
+  const savedLevel=await env.DB.prepare("SELECT MAX(json_extract(data,'$.level')) level FROM snapshots WHERE character_id=? AND json_type(data,'$.level')='integer'").bind(member.id).first();
+  const validLevel=value=>Number.isSafeInteger(value)&&value>0?value:0;
+  const beforeLevel=Math.max(validLevel(savedLevel?.level),prior?.profile_at||prior?.profile_status==='verified'?validLevel(prior?.profile?.level):0);
+  const afterLevel=data.profile_status==='verified'?Math.max(beforeLevel,validLevel(member.level),validLevel(data.profile?.level)):0;
+  const rosterWins=validLevel(member.level)>validLevel(data.profile?.level);
+  const statements=progressStatements(env,member,prior,data,{levelBefore:beforeLevel,levelAfter:afterLevel,
+    levelSource:rosterWins?'roster':'profile',levelObservedAt:rosterWins?member.roster_observed: data.profile_at});
+
   statements.push(env.DB.prepare('INSERT OR REPLACE INTO characters(id,data,updated) VALUES(?,?,?)').bind(member.id,JSON.stringify(data),timestamp()));
   statements.push(env.DB.prepare(`UPDATE character_refresh SET next_at=?,last_attempt=?,last_result=?,failures=?,last_detail_login=?,details_level=? WHERE character_id=?`)
     .bind(now+delay,at,result,profileError?(schedule.failures||0)+1:0,detailLogin??null,detailsLevel??null,member.id));
@@ -327,16 +338,15 @@ async function rosterStep(env,job,owner) {
   if(!staging||staging.generation!==job.generation)throw new APIError('Staging data did not match; previous published roster retained');
   const chunk=staging.members.slice(job.cursor,job.cursor+12);
   if(chunk.length)await env.DB.batch(chunk.map(m=>env.DB.prepare('INSERT OR REPLACE INTO membership(generation,slug,character_id,data) VALUES(?,?,?,?)').bind(job.generation,m.slug,m.id,JSON.stringify(m))));
-  if(job.published&&chunk.length)await env.DB.batch(chunk.map(m=>env.DB.prepare(`INSERT OR IGNORE INTO activity(id,character_id,kind,title,detail,observed_at)
-    SELECT ?,?,'joined',?,'First observed in this returned guild roster',? WHERE NOT EXISTS(SELECT 1 FROM membership WHERE generation=? AND character_id=?)`)
-    .bind(`joined:${job.generation}:${m.id}`,m.id,`${m.name} appeared in the guild roster`,timestamp(),job.published,m.id)));
   const cursor=job.cursor+chunk.length;
   if(cursor<staging.members.length){await syncUpdate(env,owner,{cursor,message:`Preparing roster · ${cursor} / ${job.total}`});return;}
-  if(job.published)await env.DB.prepare(`INSERT OR IGNORE INTO activity(id,character_id,kind,title,detail,observed_at)
+  const publication=rosterProgressStatements(env,{generation:job.generation,previous:job.published,owner,observedAt:staging.fetched_at||timestamp()});
+  if(job.published)publication.push(env.DB.prepare(`INSERT OR IGNORE INTO activity(id,character_id,kind,title,detail,observed_at)
     SELECT 'left:'||?||':'||m.character_id,m.character_id,'left',json_extract(m.data,'$.name')||' no longer appears in the roster',
     'A change in the returned roster; not an independent confirmation of leaving the guild',? FROM membership m WHERE m.generation=?
-    AND NOT EXISTS(SELECT 1 FROM membership n WHERE n.generation=? AND n.character_id=m.character_id)`)
-    .bind(job.generation,timestamp(),job.published,job.generation).run();
+    AND NOT EXISTS(SELECT 1 FROM membership n WHERE n.generation=? AND n.character_id=m.character_id)
+    AND EXISTS(SELECT 1 FROM sync WHERE id=1 AND lease=? AND generation=? AND phase='stage')`)
+    .bind(job.generation,timestamp(),job.published,job.generation,owner,job.generation));
   await env.DB.prepare(`INSERT OR IGNORE INTO character_refresh(character_id,next_at) SELECT character_id,0 FROM membership WHERE generation=?`).bind(job.generation).run();
   // A newly changed roster level wakes a backed-off character without repeatedly waking the same observation.
   await env.DB.prepare(`UPDATE character_refresh SET next_at=MIN(next_at,?) WHERE character_id IN (
@@ -345,7 +355,8 @@ async function rosterStep(env,job,owner) {
     .bind(epoch(),job.published||'',job.generation).run();
   await saveState(env,'guild',staging.guild);
   const observed=staging.fetched_at||timestamp();
-  await syncUpdate(env,owner,{published:job.generation,phase:'roster',cursor:0,roster_at:observed,completed_at:timestamp(),next_at:Math.floor(Date.parse(observed)/1000)+ROSTER_INTERVAL,status:'syncing',message:'Roster refreshed; activity checks continue independently'});
+  publication.push(syncUpdateStatement(env,owner,{published:job.generation,phase:'roster',cursor:0,roster_at:observed,completed_at:timestamp(),next_at:Math.floor(Date.parse(observed)/1000)+ROSTER_INTERVAL,status:'syncing',message:'Roster refreshed; activity checks continue independently'}));
+  await env.DB.batch(publication);
   await env.DB.prepare('DELETE FROM membership WHERE generation<>? AND generation<>?').bind(job.generation,job.published||'').run();
   await env.DB.prepare('DELETE FROM character_refresh WHERE character_id NOT IN (SELECT character_id FROM verified_membership WHERE generation=?)').bind(job.generation).run();
 }
