@@ -1,4 +1,5 @@
 import {credentialSaveStatement} from './account-credentials.mjs';
+import {signInStatements} from './site-analytics.mjs';
 import {mergeMember,GUILD} from './logic.mjs';
 import {candidateFromAccount,validateProfileMember,profileMemberStatement} from './guild-membership.mjs';
 import {profileJoinedStatement} from './roster-progress.mjs';
@@ -200,8 +201,10 @@ export async function authRoute(request,env){
       }catch{/* Identity may still sign in, but guild access fails closed until ownership is verified. */}
       if(!ownershipCommitted)await env.DB.prepare('UPDATE users SET ownership_status=\'unavailable\',ownership_checked=?,updated_at=? WHERE id=?').bind(epoch(),created,user.id).run();
       const session=random(),csrf=random(),old=cookie(request,'__Host-wv_session');
-      if(old)await env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await digest(old)).run();
-      await env.DB.prepare('INSERT INTO sessions(token_hash,user_id,csrf,expires) VALUES(?,?,?,?)').bind(await digest(session),user.id,csrf,epoch()+86400).run();
+      const signedInAt=epoch(),sessionWrites=[];
+      if(old)sessionWrites.push(env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await digest(old)));
+      sessionWrites.push(env.DB.prepare('INSERT INTO sessions(token_hash,user_id,csrf,expires) VALUES(?,?,?,?)').bind(await digest(session),user.id,csrf,signedInAt+86400));
+      await env.DB.batch([...sessionWrites,...signInStatements(env,user.id,signedInAt)]);
       // Only a random session cookie leaves the server. A bounded encrypted user token supports account discovery.
       return redirect('/guild#overview',[setCookie('__Host-wv_session',session,86400),setCookie('__Host-wv_login','',0)]);
     }catch{return fail('provider');}

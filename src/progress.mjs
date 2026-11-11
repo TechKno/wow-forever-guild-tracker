@@ -191,6 +191,7 @@ export async function maintain(env){
     env.DB.prepare('DELETE FROM oauth_states WHERE expires<?').bind(Math.floor(Date.now()/1000)),
     env.DB.prepare('DELETE FROM snapshots WHERE observed_at<?').bind(new Date(Date.now()-90*86400000).toISOString()),
     env.DB.prepare('DELETE FROM activity WHERE observed_at<?').bind(new Date(Date.now()-365*86400000).toISOString()),
+    env.DB.prepare("DELETE FROM site_daily_traffic WHERE day<date('now','-89 days')"),
     env.DB.prepare("INSERT OR REPLACE INTO state(key,value) VALUES('maintenance_day',?)").bind(today)
   ]);
 }

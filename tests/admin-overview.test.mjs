@@ -5,11 +5,15 @@ import {readFileSync,readdirSync} from 'node:fs';
 import {adminOverview,syncHistoryStatements} from '../src/admin-overview.mjs';
 import {tick,GUILD,SLUG} from '../src/logic.mjs';
 import {digest,random,ORIGIN,currentUser} from '../src/auth.mjs';
+import worker from '../src/worker.mjs';
 
 const epoch=()=>Math.floor(Date.now()/1000),stamp=()=>new Date().toISOString();
-function database(){
+function database({beforeAnalytics=false}={}){
   const raw=new DatabaseSync(':memory:'),directory=new URL('../migrations/',import.meta.url);
-  for(const file of readdirSync(directory).filter(name=>name.endsWith('.sql')).sort())raw.exec(readFileSync(new URL(file,directory),'utf8'));
+  for(const file of readdirSync(directory).filter(name=>name.endsWith('.sql')).sort()){
+    if(beforeAnalytics&&file==='0025_site_analytics.sql')break;
+    raw.exec(readFileSync(new URL(file,directory),'utf8'));
+  }
   class Statement{
     constructor(sql,params=[]){this.sql=sql;this.params=params;}
     bind(...params){return new Statement(this.sql,params);}
@@ -67,6 +71,57 @@ test('admin counts distinguish characters, site accounts and current guild accou
     assert.equal(result.health.scheduler.status,'healthy');assert.equal(result.health.blizzard.status,'limited');assert.equal(result.health.backups.status,'managed_by_host');
     for(const secret of ['owner-fixture','member-fixture','private-client-id','private-client-secret','private-bot-token','private-discord-secret','private-csrf','private-subject','private-provider-route','private-provider-error','123456789012345678'])assert(!encoded.includes(secret),secret+' must stay private');
   }finally{f.DB.raw.close();}
+});
+
+test('the admin overview counts full page loads, groups alt sign-ins by account and keeps analytics private',async()=>{
+  const f=await fixture();
+  f.env.ASSETS={async fetch(){return new Response('<html></html>',{headers:{'Content-Type':'text/html'}});}};
+  try{
+    const headers={'Sec-Fetch-Dest':'document','Sec-Fetch-Mode':'navigate'};
+    const get=(path,options={})=>worker.fetch(new Request(ORIGIN+path,{...options,headers:{...headers,...options.headers}}),f.env);
+    assert.equal((await get('/')).status,200);
+    assert.equal((await get('/guild',{headers:{Cookie:f.request.headers.get('Cookie')}})).status,200);
+    assert.equal((await get('/guild')).status,303);
+    await get('/',{method:'HEAD'});
+    await get('/',{headers:{'Sec-Purpose':'prefetch'}});
+    await get('/welcome.css');
+    await get('/api/public');
+    assert.equal((await worker.fetch(f.ordinary,f.env)).status,403);
+    await f.DB.prepare('INSERT INTO site_last_sign_in(user_id,signed_in_at) VALUES(?,?)').bind('member-fixture',epoch()).run();
+    await f.DB.prepare("INSERT INTO site_daily_traffic(day,welcome_views) VALUES(date('now','-7 days'),3)").run();
+    await f.DB.prepare("INSERT INTO site_daily_traffic(day,guild_views) VALUES(date('now','-30 days'),99)").run();
+    await f.DB.prepare("INSERT INTO users(id,subject_hash,ownership_status,created_at,updated_at) VALUES('manual-fixture','manual-subject','admin_mapped',?,?)").bind(stamp(),stamp()).run();
+    const response=await worker.fetch(f.request,f.env);
+    assert.equal(response.status,200);
+    assert.match(response.headers.get('Cache-Control'),/no-store/);
+    const {analytics}=await response.json();
+    assert.deepEqual(analytics.today,{welcome_views:1,guild_views:1,sign_ins:0,accounts_signed_in:1});
+    assert.equal(analytics.last_7_days.welcome_views,1);
+    assert.equal(analytics.last_30_days.welcome_views,4);
+    assert.equal(analytics.last_30_days.guild_views,1);
+    assert.equal(analytics.accounts.length,3);
+    assert.equal(analytics.accounts[0].character_name,'Sable Testlight');
+    assert(analytics.accounts[0].last_sign_in_at);
+    assert.equal(analytics.accounts.find(row=>row.character_name==='Rook Testlight').last_sign_in_at,null);
+    assert.doesNotMatch(JSON.stringify(analytics),/member-fixture|manual-subject|Willow Testlight/);
+  }finally{f.DB.raw.close();}
+});
+
+test('analytics migration recovers the latest surviving session time without inventing past traffic',async()=>{
+  const DB=database({beforeAnalytics:true});
+  try{
+    await signedUser(DB,'saved-session',null);
+    await signedUser(DB,'no-saved-session',null);
+    const lastSignIn=epoch()-300;
+    await DB.prepare("UPDATE users SET created_at=datetime('now','-2 days')").run();
+    await DB.prepare("DELETE FROM sessions WHERE user_id='no-saved-session'").run();
+    await DB.prepare("UPDATE sessions SET expires=? WHERE user_id='saved-session'").bind(lastSignIn+86400).run();
+    await DB.prepare("INSERT INTO sessions VALUES('old-session','saved-session','csrf',?)").bind(lastSignIn+3600).run();
+    DB.raw.exec(readFileSync(new URL('../migrations/0025_site_analytics.sql',import.meta.url),'utf8'));
+    assert.deepEqual({...await DB.prepare('SELECT * FROM site_last_sign_in').first()},{user_id:'saved-session',signed_in_at:lastSignIn,recovered:1});
+    assert.equal((await DB.prepare('SELECT COUNT(*) total FROM site_last_sign_in').first()).total,1);
+    assert.equal((await DB.prepare('SELECT COUNT(*) total FROM site_daily_traffic').first()).total,0);
+  }finally{DB.raw.close();}
 });
 
 async function withProvider(DB,roster,run){

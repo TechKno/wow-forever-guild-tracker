@@ -37,7 +37,7 @@ Screenshots are captured from the real interface using the isolated [demo previe
 
 ## Features
 
-- Private administrator overview with scheduler/provider health, account counts and completed roster-import history.
+- Private administrator overview with last website sign-in per account, daily traffic totals, scheduler and provider health, and completed roster-import history.
 - A [private guild gallery](docs/GALLERY.md) with member screenshot uploads, captions, full-size viewing and reversible owner/admin moderation.
 - Manage My Account for owned characters, main/alt grouping, combat roles and Discord preferences.
 - A centred guild hierarchy sorted by in-game rank, with editable suggested rank names.

@@ -17,7 +17,7 @@ function database(){
     async all(){DB.queries++;return {results:raw.prepare(this.sql).all(...this.params)};}
     async run(){DB.queries++;return raw.prepare(this.sql).run(...this.params);}
   }
-  const DB={raw,queries:0,failBatchAt:null,prepare:sql=>new Statement(sql),async batch(statements){raw.exec('BEGIN');try{const results=[];for(let i=0;i<statements.length;i++){if(DB.failBatchAt===i)throw Error('Synthetic atomic-write failure');results.push(await statements[i].run());}raw.exec('COMMIT');return results;}catch(error){raw.exec('ROLLBACK');throw error;}}};
+  const DB={raw,queries:0,failBatchAt:null,prepare:sql=>new Statement(sql),async batch(statements){const failAt=DB.failBatchAt;DB.failBatchAt=null;raw.exec('BEGIN');try{const results=[];for(let i=0;i<statements.length;i++){if(failAt===i)throw Error('Synthetic atomic-write failure');results.push(await statements[i].run());}raw.exec('COMMIT');return results;}catch(error){raw.exec('ROLLBACK');throw error;}}};
   return DB;
 }
 const candidate={id:91,name:'New',surname:'Adventurer',slug:'new-adventurer'};
@@ -179,7 +179,8 @@ test('proof and character-link writes are atomic and a failed batch cannot grant
 test('a failure after the fallback join insertion rolls back the announcement with its proof and ownership links',async()=>{
   const f=await fixture(),originalBatch=f.DB.batch.bind(f.DB);let includedJoin=false;
   f.DB.batch=statements=>{
-    includedJoin=statements.some(statement=>/INSERT OR IGNORE INTO activity/.test(statement.sql));
+    if(!statements.some(statement=>/INSERT OR IGNORE INTO activity/.test(statement.sql)))return originalBatch(statements);
+    includedJoin=true;
     return originalBatch([...statements,f.DB.prepare('INSERT INTO missing_signin_test_table VALUES(1)')]);
   };
   const result=await signIn(f);assert(includedJoin,'The announcement must be in the same batch as the verified ownership proof');
@@ -259,6 +260,20 @@ test('rotation cannot retain alts with missing ownership, expired proof, departu
     assert.equal(await f.DB.prepare('SELECT character_id FROM profile_members WHERE character_id=?').bind(id).first(),null);
     assert.equal(await f.DB.prepare('SELECT character_id FROM character_links WHERE character_id=?').bind(id).first(),null);
   }
+});
+
+test('a successful website sign-in records its time independently of character ownership and session retention',async()=>{
+  const f=await fixture();
+  const first=await signIn(f);
+  const initial=await f.DB.prepare('SELECT signed_in_at FROM site_last_sign_in WHERE user_id=?').bind(first.user.id).first();
+  assert.equal((await f.DB.prepare('SELECT expires FROM sessions WHERE user_id=?').bind(first.user.id).first()).expires,initial.signed_in_at+86400);
+  await f.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(first.user.id).run();
+  assert.deepEqual(await f.DB.prepare('SELECT signed_in_at FROM site_last_sign_in WHERE user_id=?').bind(first.user.id).first(),initial);
+  await f.DB.prepare('UPDATE site_last_sign_in SET signed_in_at=signed_in_at-60 WHERE user_id=?').bind(first.user.id).run();
+  const second=await signIn(f);
+  assert.equal(second.user.id,first.user.id);
+  assert((await f.DB.prepare('SELECT signed_in_at FROM site_last_sign_in WHERE user_id=?').bind(first.user.id).first()).signed_in_at>=initial.signed_in_at);
+  assert.equal((await f.DB.prepare('SELECT SUM(sign_ins) total FROM site_daily_traffic').first()).total,2);
 });
 
 test('accounts with many guild alts use a bounded database batch rather than one insert per alt',async()=>{

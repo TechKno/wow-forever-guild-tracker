@@ -1,5 +1,6 @@
 import {refreshOneAccount} from './account-refresh.mjs';
 import {discoverRosterAccounts} from './account-discovery.mjs';
+import {isDocumentView,recordDocumentView} from './site-analytics.mjs';
 import {CONFIG,REGION,RULESET_NAME,RULESET_LABEL,PUBLIC_ASSET_PATHS,ensureDeploymentIdentity} from './config.mjs';
 import {GUILD,SLUG,tick,state,api,refreshView,queueRefresh,mergeMember,probeCharacter,APIError} from './logic.mjs';
 import {authRoute,WebError,currentUser,requireMember,requireAdmin,requireWrite,readLimitedText,isSiteOrigin} from './auth.mjs';
@@ -180,9 +181,16 @@ async function handleRequest(request,env) {
     } catch(error) { return json({error:error instanceof WebError?error.message:'The dashboard is temporarily unavailable; please try again shortly'},error instanceof WebError?error.status:503); }
 }
 export default {
-  async fetch(request,env){
-    const routed=request.method==='HEAD'&&!new URL(request.url).pathname.startsWith('/auth/')?new Request(request,{method:'GET'}):request;
+  async fetch(request,env,ctx){
+    const url=new URL(request.url);
+    const routed=request.method==='HEAD'&&!url.pathname.startsWith('/auth/')?new Request(request,{method:'GET'}):request;
     const response=await handleRequest(routed,env);
+    const page=welcomePaths.has(url.pathname)?'welcome':guildPaths.has(url.pathname)?'guild':null;
+    if(page&&isSiteOrigin(url.origin)&&isDocumentView(request,response)){
+      const counted=recordDocumentView(env,page).catch(()=>{});
+      if(ctx?.waitUntil)ctx.waitUntil(counted);
+      else await counted;
+    }
     if(request.method!=='HEAD')return response;
     await response.body?.cancel();return new Response(null,{status:response.status,headers:response.headers});
   },

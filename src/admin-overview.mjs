@@ -1,4 +1,5 @@
 import {currentUser,requireMember,requireAdmin} from './auth.mjs';
+import {siteAnalytics} from './site-analytics.mjs';
 
 const epoch=()=>Math.floor(Date.now()/1000);
 const date=value=>typeof value==='string'&&Number.isFinite(Date.parse(value))?new Date(value).toISOString():null;
@@ -31,7 +32,7 @@ export function syncHistoryStatements(env,{generation,previous,owner,observedAt,
 export async function adminOverview(request,env){
   const user=await currentUser(request,env);requireMember(user);requireAdmin(user);
   const now=epoch(),checkedAt=new Date().toISOString();
-  const [sync,stateRows,counts,queue,provider,discordQueue,imports]=await Promise.all([
+  const [sync,stateRows,counts,queue,provider,discordQueue,imports,analytics]=await Promise.all([
     env.DB.prepare('SELECT phase,status,roster_at,completed_at,next_at,updated FROM sync WHERE id=1').first(),
     env.DB.prepare("SELECT key,value FROM state WHERE key IN ('scheduler','blizzard_cooldown','discord_pause','discord_config')").all(),
     env.DB.prepare(`WITH current_accounts AS (
@@ -40,7 +41,7 @@ export async function adminOverview(request,env){
           WHERE l.user_id=u.id AND m.generation=(SELECT published FROM sync WHERE id=1)))
       SELECT (SELECT COUNT(*) FROM verified_membership WHERE generation=(SELECT published FROM sync WHERE id=1)) characters,
         (SELECT COUNT(*) FROM membership WHERE generation=(SELECT published FROM sync WHERE id=1)) roster_characters,
-        (SELECT COUNT(*) FROM users) site_accounts,
+        (SELECT COUNT(*) FROM users WHERE ownership_status<>'admin_mapped') site_accounts,
         (SELECT COUNT(*) FROM current_accounts) current_member_accounts,
         (SELECT COUNT(*) FROM current_accounts a JOIN discord_links d ON d.user_id=a.id) discord_linked_accounts,
         (SELECT COUNT(*) FROM verified_membership m WHERE m.generation=(SELECT published FROM sync WHERE id=1)
@@ -57,7 +58,8 @@ export async function adminOverview(request,env){
       WHERE m.generation=(SELECT published FROM sync WHERE id=1)`).bind(now,now).first(),
     env.DB.prepare("SELECT MAX(attempted) last_attempt_at,MAX(succeeded) last_success_at,SUM(CASE WHEN status='unavailable' THEN 1 ELSE 0 END) failed_endpoints FROM evidence").first(),
     env.DB.prepare("SELECT SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) pending,SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) failed,SUM(CASE WHEN status='sent' THEN 1 ELSE 0 END) delivered FROM discord_outbox").first(),
-    env.DB.prepare('SELECT observed_at,completed_at,duration_ms,member_count,joined,departed,level_changes,rank_changes,baseline FROM roster_imports ORDER BY completed_at DESC,generation DESC LIMIT 20').all()
+    env.DB.prepare('SELECT observed_at,completed_at,duration_ms,member_count,joined,departed,level_changes,rank_changes,baseline FROM roster_imports ORDER BY completed_at DESC,generation DESC LIMIT 20').all(),
+    siteAnalytics(env,now)
   ]);
   const states=new Map(stateRows.results.map(row=>[row.key,asState(row)])),scheduler=states.get('scheduler'),discord=states.get('discord_config')||{};
   const completed=date(scheduler?.last_completed),schedulerAge=completed?Date.now()-Date.parse(completed):null;
@@ -73,7 +75,7 @@ export async function adminOverview(request,env){
   if(count(discordQueue?.failed))attention.push({kind:'discord_delivery',severity:'warning',title:'Discord deliveries need attention',count:count(discordQueue.failed)});
   const missingDiscord=Math.max(0,count(counts?.current_member_accounts)-count(counts?.discord_linked_accounts));
   if(missingDiscord)attention.push({kind:'discord_unlinked',severity:'info',title:'Verified member accounts without linked Discord',count:missingDiscord});
-  return {checked_at:checkedAt,
+  return {checked_at:checkedAt,analytics,
     health:{blizzard:{configured,status:!configured?'not_configured':paused?'paused':count(provider?.failed_endpoints)?'limited':provider?.last_success_at?'observed':'unknown',last_success_at:date(provider?.last_success_at),last_attempt_at:date(provider?.last_attempt_at),failed_endpoints:count(provider?.failed_endpoints)},
       scheduler:{status:schedulerStatus,last_completed_at:completed},
       roster:{status:sync?.phase==='stage'?'importing':sync?.roster_at?'published':'waiting',observed_at:date(sync?.roster_at),completed_at:date(sync?.completed_at)},
