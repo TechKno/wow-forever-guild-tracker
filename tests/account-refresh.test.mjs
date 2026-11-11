@@ -56,25 +56,26 @@ function noSecrets(f,result){
   assert(!text.includes(TOKEN));assert(!text.includes(REFRESH));assert(!text.includes(f.env.BLIZZARD_CLIENT_SECRET));assert.equal(f.DB.raw.prepare('SELECT COUNT(*) n FROM account_refresh_guards').get().n,0);
 }
 
-test('identity recovery only records an ID that matches the existing account and does not count a new sign-in',async()=>{
+test('identity recovery only records details for the matching account and does not count a new sign-in',async()=>{
   const id='123456789012345678901234';
-  for(const matches of [true,false]){
+  for(const [matches,knownId] of [[true,null],[true,id],[false,null]]){
     const f=await fixture({save:false});
     f.user.subject_hash=await digest('https://oauth.battle.net|'+(matches?id:'987654321'));
     await f.DB.prepare('UPDATE users SET subject_hash=? WHERE id=?').bind(f.user.subject_hash,f.user.id).run();
     const grant=await credentialSaveStatement(f.env,f.user,{access_token:TOKEN,expires_in:3600},f.created);
     await grant.run();
-    await f.DB.prepare('INSERT INTO site_battlenet_identities(user_id,recovery_pending) VALUES(?,1)').bind(f.user.id).run();
+    await f.DB.prepare('INSERT INTO site_battlenet_identities(user_id,account_id,recovery_pending) VALUES(?,?,1)').bind(f.user.id,knownId).run();
     const original=globalThis.fetch;
     globalThis.fetch=async(url,options)=>{
       assert.equal(String(url),'https://oauth.battle.net/userinfo');
       assert.equal(options.headers.Authorization,'Bearer '+TOKEN);
-      return Response.json({sub:id});
+      return Response.json({sub:id,battletag:'Demo#1234'});
     };
     try{
       await refreshOneAccount(f.env);
-      const identity=await f.DB.prepare('SELECT account_id,recovery_pending FROM site_battlenet_identities WHERE user_id=?').bind(f.user.id).first();
+      const identity=await f.DB.prepare('SELECT account_id,battle_tag,recovery_pending FROM site_battlenet_identities WHERE user_id=?').bind(f.user.id).first();
       assert.equal(identity.account_id,matches?id:null);
+      assert.equal(identity.battle_tag,matches?'Demo#1234':null);
       assert.equal(identity.recovery_pending,0);
       assert.equal((await f.DB.prepare('SELECT COUNT(*) count FROM site_sign_in_history').first()).count,0);
     }finally{globalThis.fetch=original;f.DB.raw.close();}

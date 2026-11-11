@@ -18,14 +18,15 @@ async function recoverBattleNetIdentity(env, now) {
   if (!grant) return;
   try {
     const token = await decryptAccountCredential(env, {id:grant.user_id,subject_hash:grant.subject_hash}, grant);
-    const {subject,subjectHash} = await battleNetIdentity(token);
+    const {subject,subjectHash,battleTag} = await battleNetIdentity(token);
     if (subjectHash !== grant.subject_hash) return;
-    await env.DB.prepare(`UPDATE site_battlenet_identities SET account_id=?
-      WHERE user_id=? AND account_id IS NULL AND EXISTS(
+    await env.DB.prepare(`UPDATE site_battlenet_identities
+      SET account_id=COALESCE(account_id,?),battle_tag=COALESCE(?,battle_tag)
+      WHERE user_id=? AND (account_id IS NULL OR account_id=?) AND EXISTS(
         SELECT 1 FROM account_refresh a WHERE a.user_id=? AND a.encrypted_credential=? AND a.expires_at>unixepoch())`)
-      .bind(subject, grant.user_id, grant.user_id, grant.encrypted_credential).run();
+      .bind(subject, battleTag, grant.user_id, subject, grant.user_id, grant.encrypted_credential).run();
   } catch {
-    // A later normal sign-in supplies the ID if the saved authorisation cannot.
+    // A later sign-in can supply the account details if the saved authorisation cannot.
   }
 }
 export async function refreshOneAccount(env){

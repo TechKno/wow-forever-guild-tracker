@@ -84,6 +84,7 @@
 .admin-accounts-table th,
 .admin-accounts-table td { padding-block: 14px; }
 .admin-accounts-table code { font-size: .94em; overflow-wrap: anywhere; }
+.admin-identity-name { font-weight: 600; overflow-wrap: anywhere; }
 .admin-accounts-table tbody th { font-weight: 600; }
 .admin-accounts-table small { font-weight: 400; }
 .admin-signin-status {

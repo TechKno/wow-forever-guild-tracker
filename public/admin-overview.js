@@ -38,10 +38,14 @@
   function dateTime(value){
     return `<time datetime="${esc(value)}">${esc(time(value))}</time>`;
   }
+  function accountIdentity(name,id){
+    return `${name?`<div class="admin-identity-name">${esc(name)}</div>`:''}<code>${esc(id)}</code>`;
+  }
   function accountRows(accounts){
     const query=accountQuery.trim().toLowerCase();
     const matching=accounts.filter(account=>{
-      const terms=[account.name,...account.characters,account.battle_net_id,...account.discord_ids.map(link=>link.id)];
+      const terms=[account.name,...account.characters,account.battle_tag,account.battle_net_id,
+        ...account.discord_ids.flatMap(link=>[link.display_name,link.id])];
       return terms.some(term=>String(term??'').toLowerCase().includes(query));
     });
     if(!matching.length)return '<tr><td colspan="5" class="admin-accounts-empty">No matching accounts or characters.</td></tr>';
@@ -53,13 +57,13 @@
         : '';
       const last=account.last_sign_in_at?dateTime(account.last_sign_in_at):account.signed_in
         ? `Unavailable<small>Account created ${esc(time(account.account_created_at))}</small>`:'—';
-      const battleNet=account.battle_net_id?`<code>${esc(account.battle_net_id)}</code>`:account.signed_in?'Awaiting Battle.net check':'—';
-      const discord=account.discord_ids.map(link=>`<div><code>${esc(link.id)}</code><small>${link.source==='linked'?'Linked account':'Admin mapping'}</small></div>`).join('');
+      const battleNet=account.battle_net_id?accountIdentity(account.battle_tag,account.battle_net_id):account.signed_in?'Awaiting Battle.net check':'—';
+      const discord=account.discord_ids.map(link=>`<div>${accountIdentity(link.display_name,link.id)}<small>${link.source==='linked'?'Linked account':'Admin mapping'}</small></div>`).join('');
       return `<tr>
         <th scope="row">${esc(account.name)}${alts.length?`<small>${esc(alts.join(', '))}</small>`:''}</th>
         <td data-label="Battle.net sign-in"><span class="admin-signin-status ${account.signed_in?'signed-in':''}">${status}</span></td>
-        <td data-label="Battle.net ID">${battleNet}</td>
-        <td data-label="Discord ID">${discord||'—'}</td>
+        <td data-label="Battle.net account">${battleNet}</td>
+        <td data-label="Discord account">${discord||'—'}</td>
         <td data-label="Last sign-in">${last}${history}</td>
       </tr>`;
     }).join('');
@@ -69,13 +73,13 @@
     return `<article class="panel admin-overview-panel admin-accounts">
       <div class="admin-accounts-heading">
         <div><h3>Accounts &amp; sign-ins</h3><p>${signedIn} signed in with Battle.net · ${accounts.length-signedIn} roster entries without a linked sign-in</p></div>
-        <label class="admin-account-search">Find an account<input type="search" data-admin-account-search placeholder="Character name or ID" value="${esc(accountQuery)}"></label>
+        <label class="admin-account-search">Find an account<input type="search" data-admin-account-search placeholder="Name, BattleTag or ID" value="${esc(accountQuery)}"></label>
       </div>
       <div class="admin-accounts-scroll"><table class="admin-site-table admin-accounts-table">
-        <thead><tr><th scope="col">Account / characters</th><th scope="col">Battle.net sign-in</th><th scope="col">Battle.net ID</th><th scope="col">Discord ID</th><th scope="col">Last sign-in</th></tr></thead>
+        <thead><tr><th scope="col">Account / characters</th><th scope="col">Battle.net sign-in</th><th scope="col">Battle.net account</th><th scope="col">Discord account</th><th scope="col">Last sign-in</th></tr></thead>
         <tbody data-admin-account-rows>${accountRows(accounts)}</tbody>
       </table></div>
-      <p class="subtle">Missing Battle.net IDs appear after the next verified account check. Sign-in history shows up to 10 recorded timestamps per account.</p>
+      <p class="subtle">Battle.net IDs and BattleTags require an authorised account check. Sign-in history shows up to 10 recorded timestamps per account.</p>
     </article>`;
   }
   function rankForm(){

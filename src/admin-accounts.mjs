@@ -1,11 +1,12 @@
 import {activeManualMappings} from './admin-mappings.mjs';
-import {displayManualMappings} from './discord-people.mjs';
+import {discordConfig} from './discord.mjs';
+import {discordDisplayName,displayManualMappings} from './discord-people.mjs';
 
 const isoTime = value => Number.isSafeInteger(value) && value > 0 ? new Date(value * 1000).toISOString() : null;
 
 export async function adminAccounts(env) {
-  const [accounts, roster, history, activeMappings] = await Promise.all([
-    env.DB.prepare(`SELECT u.id,u.main_character_id,u.created_at,b.account_id battle_net_id,
+  const [accounts, roster, history, activeMappings, profiles] = await Promise.all([
+    env.DB.prepare(`SELECT u.id,u.main_character_id,u.created_at,b.account_id battle_net_id,b.battle_tag,
       d.discord_id,s.signed_in_at,(
         SELECT json_extract(m.data,'$.name') FROM membership m WHERE m.character_id=u.main_character_id
         ORDER BY json_extract(m.data,'$.roster_observed') DESC LIMIT 1
@@ -22,9 +23,13 @@ export async function adminAccounts(env) {
       SELECT user_id,signed_in_at,ROW_NUMBER() OVER(PARTITION BY user_id ORDER BY signed_in_at DESC,id DESC) position
       FROM site_sign_in_history WHERE signed_in_at>=unixepoch()-90*86400
     ) WHERE position<=10 ORDER BY signed_in_at DESC`).all(),
-    activeManualMappings(env)
+    activeManualMappings(env),
+    discordConfig(env).then(({guild_id}) => env.DB.prepare(`SELECT discord_id,nickname,global_name,username
+      FROM discord_profiles WHERE guild_id=?`).bind(guild_id).all())
   ]);
 
+  const profilesById = new Map(profiles.results.map(profile => [profile.discord_id, profile]));
+  const discordAccount = (id, source) => ({id, source, display_name: discordDisplayName(profilesById.get(id))});
   const recent = new Map();
   for (const event of history.results) {
     if (!recent.has(event.user_id)) recent.set(event.user_id, []);
@@ -36,7 +41,8 @@ export async function adminAccounts(env) {
     characters: [],
     signed_in: true,
     battle_net_id: row.battle_net_id,
-    discord_ids: row.discord_id ? [{id: row.discord_id, source: 'linked'}] : [],
+    battle_tag: row.battle_tag,
+    discord_ids: row.discord_id ? [discordAccount(row.discord_id, 'linked')] : [],
     last_sign_in_at: isoTime(row.signed_in_at),
     recent_sign_ins: recent.get(row.id) || [],
     account_created_at: row.created_at
@@ -56,7 +62,7 @@ export async function adminAccounts(env) {
     if (owners.size !== 1) continue;
     const [account] = owners;
     byDiscord.set(id, account);
-    account.discord_ids.push({id, source: 'mapped'});
+    account.discord_ids.push(discordAccount(id, 'mapped'));
   }
 
   const rows = [...byUser.values()];
@@ -70,7 +76,8 @@ export async function adminAccounts(env) {
         characters: [],
         signed_in: false,
         battle_net_id: null,
-        discord_ids: mapping ? [{id: mapping.discord_id, source: 'mapped'}] : [],
+        battle_tag: null,
+        discord_ids: mapping ? [discordAccount(mapping.discord_id, 'mapped')] : [],
         last_sign_in_at: null,
         recent_sign_ins: [],
         account_created_at: null

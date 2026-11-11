@@ -144,7 +144,8 @@ test('paused and unavailable discovery report their state without promising a sc
 
 test('privacy explains the private short-lived character-ID index and arrival-triggered token use',()=>{
  const privacy=readFileSync(new URL('../public/privacy.html',import.meta.url),'utf8');
- assert.match(privacy,/Battle.net access token encrypted on the server/);assert.match(privacy,/only to recheck character ownership and discover verified guild characters/);assert.match(privacy,/provider’s expiry or 24 hours after sign-in, whichever comes first/);assert.match(privacy,/delete it when you sign out/);assert.match(privacy,/do not store refresh tokens or your password/);
+ assert.match(privacy,/Battle.net access token encrypted on the server/);assert.match(privacy,/verify your Battle.net account, recheck character ownership and discover verified guild characters/);assert.match(privacy,/provider’s expiry or 24 hours after sign-in, whichever comes first/);assert.match(privacy,/delete it when you sign out/);assert.match(privacy,/do not store refresh tokens or your password/);
+ assert.match(privacy,/administrator can see Battle.net IDs and BattleTags, connected or mapped Discord IDs and display names/);
  assert.match(privacy,/private index of character IDs returned by your authorised Battle.net account check, including characters not yet in the guild/);assert.match(privacy,/ID index is kept for up to 24 hours and deleted on sign-out or expiry/);assert.match(privacy,/It is never published/);assert.match(privacy,/Unrelated character names and details are not retained/);assert.match(privacy,/New guild characters without a matching owner can trigger authorised account checks/);assert.match(privacy,/accounts are not polled on a regular timer when there are no unmatched arrivals/);
  assert.doesNotMatch(privacy,/do not save[^<]*Blizzard access tokens|unrelated characters are not retained|normally every 15 minutes/);
 });

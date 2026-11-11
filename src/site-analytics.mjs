@@ -1,9 +1,10 @@
 const SECONDS_PER_DAY = 86400;
 
-export function signInStatements(env, userId, signedInAt, battleNetId) {
+export function signInStatements(env, userId, signedInAt, battleNetId, battleTag = null) {
   return [
-    env.DB.prepare(`INSERT INTO site_battlenet_identities(user_id,account_id) VALUES(?,?)
-      ON CONFLICT(user_id) DO UPDATE SET account_id=excluded.account_id,recovery_pending=0`).bind(userId,battleNetId),
+    env.DB.prepare(`INSERT INTO site_battlenet_identities(user_id,account_id,battle_tag) VALUES(?,?,?)
+      ON CONFLICT(user_id) DO UPDATE SET account_id=excluded.account_id,recovery_pending=0,
+      battle_tag=COALESCE(excluded.battle_tag,site_battlenet_identities.battle_tag)`).bind(userId,battleNetId,battleTag),
     env.DB.prepare('INSERT INTO site_sign_in_history(user_id,signed_in_at) VALUES(?,?)').bind(userId,signedInAt),
     env.DB.prepare(`INSERT INTO site_last_sign_in(user_id,signed_in_at) VALUES(?,?)
       ON CONFLICT(user_id) DO UPDATE SET signed_in_at=excluded.signed_in_at,recovered=0

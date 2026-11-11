@@ -33,14 +33,14 @@ test('summary distinguishes characters and accounts and shows completed import d
  assert.match(p.host.innerHTML,/<td>16<\/td><td>2<\/td><td>1<\/td><td>3<\/td><td>4<\/td><td>2m 0s<\/td>/);assert.match(p.host.innerHTML,/Backup availability is managed by your host/);assert.doesNotMatch(p.host.innerHTML,/Backups verified|Backups healthy/);
 });
 
-test('the accounts section renders Battle.net sign-in status, exact IDs and recorded history',async()=>{
+test('the accounts section renders names alongside exact IDs and sign-in history',async()=>{
  const p=fixture(),last='2026-11-09T09:30:00.000Z';p.emit(auth());
  p.state.overview.accounts=[
-   {name:'Test & Main',characters:['Test & Main','Test Alt'],signed_in:true,battle_net_id:'123456789012345678901234',discord_ids:[{id:'123456789012345678',source:'linked'}],last_sign_in_at:last,recent_sign_ins:[last,'2026-11-08T09:30:00.000Z']},
+   {name:'Test & Main',characters:['Test & Main','Test Alt'],signed_in:true,battle_net_id:'123456789012345678901234',battle_tag:'Demo#1234',discord_ids:[{id:'123456789012345678',source:'linked',display_name:'Example <Discord>'}],last_sign_in_at:last,recent_sign_ins:[last,'2026-11-08T09:30:00.000Z']},
    {name:'Roster only',characters:['Roster only'],signed_in:false,battle_net_id:null,discord_ids:[],last_sign_in_at:null,recent_sign_ins:[]}
  ];
  await p.api.load('accounts');
- for(const value of ['Test &amp; Main','Test Alt','123456789012345678901234','123456789012345678','Recent sign-ins','No linked sign-in','datetime="'+last+'"'])assert(p.host.innerHTML.includes(value),value);
+ for(const value of ['Test &amp; Main','Test Alt','Demo#1234</div><code>123456789012345678901234','Example &lt;Discord&gt;</div><code>123456789012345678','Recent sign-ins','No linked sign-in','datetime="'+last+'"'])assert(p.host.innerHTML.includes(value),value);
  assert.doesNotMatch(p.host.innerHTML,/Roster sync history/);
 });
 

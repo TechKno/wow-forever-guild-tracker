@@ -97,7 +97,8 @@ function adminOverview(fixtures){
     last_30_days:{welcome_views:386,guild_views:259,sign_ins:77,accounts_signed_in:8}};
   const accounts=fixtures.members.slice(0,3).map((member,index)=>({
     name:member.name,characters:[member.name],signed_in:index!==2,battle_net_id:index===0?'12345678901234567890':null,
-    discord_ids:index===2?[]:[{id:index===0?'123456789012345678':'234567890123456789',source:index===0?'linked':'mapped'}],
+    battle_tag:index===0?'DemoAdventurer#1234':null,
+    discord_ids:index===2?[]:[{id:index===0?'123456789012345678':'234567890123456789',source:index===0?'linked':'mapped',display_name:index===0?'Demo Adventurer':'Demo Smith'}],
     account_created_at:index===2?null:'2026-10-21T11:30:00.000Z',
     last_sign_in_at:[observedAt,'2026-11-08T17:25:00.000Z',null][index],
     recent_sign_ins:index===0?[observedAt,'2026-11-08T16:20:00.000Z']:[]

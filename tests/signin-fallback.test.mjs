@@ -35,7 +35,7 @@ async function signIn(f,{characters=[candidate],profiles=new Map([[candidate.slu
   globalThis.fetch=async(url,options={})=>{
     const target=new URL(url);calls.push({url:target.href,options});
     if(target.hostname==='oauth.battle.net'&&target.pathname==='/token')return Response.json({access_token:'fixture-user-token-do-not-store',expires_in:3600});
-    if(target.hostname==='oauth.battle.net'&&target.pathname==='/userinfo')return Response.json({sub:'777',id:777});
+    if(target.hostname==='oauth.battle.net'&&target.pathname==='/userinfo')return Response.json({sub:'777',id:777,battletag:'Demo#1234'});
     if(target.hostname==='eu.api.blizzard.com'&&target.pathname==='/profile/user/wow')return Response.json(account??{wow_accounts:[{characters}]},{status:accountStatus});
     if(target.hostname==='eu.api.blizzard.com'&&target.pathname.startsWith('/profile/wow/character/')){
       active++;maxActive=Math.max(maxActive,active);
@@ -274,7 +274,9 @@ test('a successful website sign-in records its time independently of character o
   assert.equal(second.user.id,first.user.id);
   assert((await f.DB.prepare('SELECT signed_in_at FROM site_last_sign_in WHERE user_id=?').bind(first.user.id).first()).signed_in_at>=initial.signed_in_at);
   assert.equal((await f.DB.prepare('SELECT SUM(sign_ins) total FROM site_daily_traffic').first()).total,2);
-  assert.equal((await f.DB.prepare('SELECT account_id FROM site_battlenet_identities WHERE user_id=?').bind(first.user.id).first()).account_id,'777');
+  const identity=await f.DB.prepare('SELECT account_id,battle_tag FROM site_battlenet_identities WHERE user_id=?').bind(first.user.id).first();
+  assert.equal(identity.account_id,'777');
+  assert.equal(identity.battle_tag,'Demo#1234');
   assert.equal((await f.DB.prepare('SELECT COUNT(*) total FROM site_sign_in_history WHERE user_id=?').bind(first.user.id).first()).total,2);
 });
 
