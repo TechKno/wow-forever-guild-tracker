@@ -29,7 +29,7 @@
     const previousAccount=me.user_id;
     me=session;
     if(previousAccount!==me.user_id||!me.verified)roleDrafts.clear();
-    el('data-nav').hidden=!me.is_admin;if(el('admin-nav'))el('admin-nav').hidden=!me.is_admin;window.dispatchEvent(new CustomEvent('guild-admin',{detail:Boolean(me.is_admin)}));
+    if(el('admin-nav'))el('admin-nav').hidden=!me.is_admin;window.dispatchEvent(new CustomEvent('guild-admin',{detail:Boolean(me.is_admin)}));
     window.dispatchEvent(new CustomEvent('guild-players',{detail:me.verified?me.player_links||[]:[]}));
     el('sign-in').textContent=me.signed_in?me.display_name:'Sign in with Battle.net';
     el('sign-in').href=me.signed_in?'#account':'/auth/login';el('sign-in').title=me.signed_in?'Manage My Account':'Sign in with Battle.net';el('sign-out').hidden=!me.signed_in;

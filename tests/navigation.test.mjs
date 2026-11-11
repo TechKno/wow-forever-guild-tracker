@@ -168,8 +168,10 @@ test('the admin route remains inaccessible without the administrator session',()
 test('an administrator can open connection controls through the guarded route',async()=>{
   const p=page({admin:true});p.open('status');
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(p.window.GuildRoute.current(),'status');
-  assert.deepEqual(p.visiblePanels(),['status']);
+  assert.equal(p.window.GuildRoute.current(),'admin-data');
+  assert.deepEqual(p.visiblePanels(),['admin']);
+  assert.equal(p.element('status').hidden,false);
+  assert.equal(p.element('admin-content').hidden,true);
   assert.equal(p.calls.admin,1);
   assert(p.calls.fetch.includes('/api/admin/status'));
 });
@@ -282,7 +284,7 @@ test('a cleared Hall data notification removes cached private overview cards',()
 test('the redesigned markup retains unique control IDs and all existing form anchors',()=>{
   const ids=[...html.matchAll(/\bid="([^"]+)"/g)].map(match=>match[1]);
   assert.equal(new Set(ids).size,ids.length,'DOM IDs must remain unique');
-  const required=['content','overview','roster','professions','recipes','status','hall','adventures','history','data-nav',
+  const required=['content','overview','roster','professions','recipes','status','hall','adventures','history','admin-nav',
     'roster-body','roster-search','class-filter','sort','group-roster','grouping-note','member-dialog','member-content',
     'stat-members','stat-members-note','stat-classes','stat-professions','stat-professions-note','stat-recipes',
     'last-refresh','refresh-timing','profession-freshness','notice','connection','updated','refresh-wow','refresh-wow-feedback',

@@ -3,7 +3,7 @@ const SITE_BRAND={"guildName":"Example Guild","siteTitle":"Guild Ledger","region
 const $=id=>document.getElementById(id);
 const escapeHTML=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const date=value=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'}):'Not yet observed';
-let adminStatus=null,pendingAdminTab=false,pendingAdminView='status',refreshCSRF='',refreshRequestVersion=0,refreshQueued=false,adminViewVersion=0;
+let adminStatus=null,pendingAdminTab=false,pendingAdminView='admin',refreshCSRF='',refreshRequestVersion=0,refreshQueued=false,adminViewVersion=0;
 let members=[],recipes=[],status=null,evidenceLoaded=false,recipeLimit=60,refreshing=false;
 let rosterLinks=[],rosterDisplayGroups=[],groupedRoster=true;
 let openMemberSlug=null,pendingCharacterId=null;
@@ -109,7 +109,9 @@ async function fetchJSON(path) {
 const ROUTES={
   overview:{panel:'overview',title:'The guild noticeboard',label:'The noticeboard',eyebrow:'PULL UP A CHAIR',description:'Good company, useful crafts, and the next grand misadventure.'},
   account:{panel:'account',title:'Manage My Account',label:'Manage My Account',eyebrow:'YOUR PLACE AT THE TABLE',description:'Your characters, combat roles and connected accounts, all in one place.'},
-  admin:{panel:'admin',title:'The keeper’s overview',label:'Admin overview',eyebrow:'THE KEEPER’S LEDGER',description:'Guild health, completed imports and the changes worth your attention.'},
+  admin:{panel:'admin',title:'Guild administration',label:'Administration',eyebrow:'THE KEEPER’S LEDGER',description:'Website activity, guild health and roster imports.'},
+  'admin-accounts':{panel:'admin',title:'Guild administration',label:'Administration',eyebrow:'THE KEEPER’S LEDGER',description:'Battle.net sign-ins, account IDs and linked Discord IDs.'},
+  'admin-data':{panel:'admin',title:'Guild administration',label:'Administration',eyebrow:'THE KEEPER’S LEDGER',description:'Data refresh, Discord connections and API history.'},
   gallery:{panel:'gallery',title:'The guild gallery',label:'Gallery',eyebrow:'TALES FROM OUR TRAVELS',description:'Screenshots, shared victories and the moments worth keeping.'},
   hierarchy:{panel:'hierarchy',title:'The guild hierarchy',label:'Guild hierarchy',eyebrow:'OUR COMPANY, IN ORDER',description:'The people of the guild, ordered by their in-game rank.'},
   roster:{panel:'roster',title:'The guild roster',label:'Guild roster',eyebrow:'THE COMPANY WE KEEP',description:'Every main, every alt, and the skills that make us a guild.'},
@@ -121,7 +123,6 @@ const ROUTES={
   recipes:{panel:'recipes',title:'The guild recipe book',label:'Recipe book',eyebrow:'A SHARED BOOK OF KNOW-HOW',description:'Explore learned recipes and the guild crafters who have been observed knowing them.'},
   history:{panel:'history',title:'The guild chronicle',label:'Guild chronicle',eyebrow:'EVERY ADVENTURE LEAVES A MARK',description:'Levels gained, skills improved, and new recipes discovered along the way.'},
   adventures:{panel:'adventures',title:'The quest board',label:'Quest board',eyebrow:'LEAVE NO ADVENTURER BEHIND',description:'Compare your party’s returned quest logs before heading out together.'},
-  status:{panel:'status',title:'Behind the noticeboard',label:'Data & connection',eyebrow:'THE KEEPER’S LEDGER',description:'Manage connections, Discord character mappings, and the freshness of guild data.'}
 };
 const paneRoutes={events:'events',craft:'crafting',learn:'wishlists',people:'members'};
 let currentView='overview',currentPane='craft',navigationOpen=false,memberVerified=false,overviewHall=null;
@@ -152,12 +153,19 @@ function renderOverview(){
   renderPrivateOverview();
 }
 function activate(view,pane) {
+  if(view==='status')view='admin-data';
   if(view==='hall')view=paneRoutes[pane||currentPane]||'crafting';
   const route=ROUTES[view];if(!route)return;
-  if(['status','admin'].includes(view)&&!window.GuildHall?.isAdmin()){pendingAdminTab=true;pendingAdminView=view;return;}
+  if(route.panel==='admin'&&!window.GuildHall?.isAdmin()){pendingAdminTab=true;pendingAdminView=view;return;}
   const viewChanged=currentView!==view,wasNavigationOpen=navigationOpen;
   currentView=view;if(route.pane)currentPane=route.pane;
   document.querySelectorAll('.tab-panel').forEach(panel=>panel.hidden=panel.id!==route.panel);
+  $('status').hidden=view!=='admin-data';
+  $('admin-content').hidden=view==='admin-data';
+  document.querySelectorAll('[data-admin-section]').forEach(link=>{
+    if(link.dataset.adminSection===view)link.setAttribute('aria-current','page');
+    else link.removeAttribute('aria-current');
+  });
   document.querySelectorAll('.nav').forEach(button=>{
     const active=button.dataset.tab===route.panel&&(route.panel!=='hall'||button.dataset.pane===(route.pane==='learn'?'craft':route.pane));
     button.classList.toggle('active',active);if(active)button.setAttribute('aria-current','page');else button.removeAttribute?.('aria-current');
@@ -173,13 +181,13 @@ function activate(view,pane) {
     window.GuildHall?.load();
   }
   if(view==='overview'){renderOverview();window.GuildHall?.load();}
-  if(view==='status'){if(!evidenceLoaded)loadEvidence();window.GuildAdventures?.admin();}
+  if(view==='admin-data'){if(!evidenceLoaded)loadEvidence();window.GuildAdventures?.admin();}
   if(view==='adventures')window.GuildAdventures?.load();
   if(view==='history')window.GuildHall?.history();
   if(view==='gallery')window.GuildGallery?.load();
   if(view==='account')window.GuildAccount?.load();
   if(view==='roster')window.GuildHall?.load();
-  if(view==='admin')window.GuildAdminOverview?.load();
+  if(view==='admin'||view==='admin-accounts')window.GuildAdminOverview?.load(view==='admin'?'overview':'accounts');
   if(view==='hierarchy'){window.GuildHierarchy?.update(members);window.GuildHierarchy?.load();window.GuildHall?.load();}
   history.replaceState(null,'','#'+view);
   if(status)renderFreshness();
@@ -456,9 +464,9 @@ async function load(force=false) {
   } catch(error) {$('notice').hidden=false;$('notice').textContent=error.message+'. Previously loaded data remains visible.';$('notice').classList.remove('ready');$('connection').textContent='Connection unavailable';}
   finally{refreshing=false;}
 }
-window.addEventListener('guild-admin',event=>{if(!event.detail){adminViewVersion++;refreshRequestVersion++;refreshCSRF='';refreshQueued=false;$('refresh-wow').hidden=true;$('refresh-wow').disabled=true;$('refresh-wow').textContent='↻ Refresh WoW data';$('refresh-wow-feedback').hidden=true;$('refresh-wow-feedback').textContent='';adminStatus=null;evidenceLoaded=false;$('evidence-body').innerHTML='';$('sync-details').innerHTML='';$('limits').innerHTML='';if(pendingAdminTab||!$('status').hidden||!$('admin').hidden)activate('roster');window.GuildAdminOverview?.reset();pendingAdminTab=false;}else if(pendingAdminTab||['#status','#admin'].includes(location.hash)){const target=pendingAdminTab?pendingAdminView:location.hash.slice(1);pendingAdminTab=false;activate(target);}});
+window.addEventListener('guild-admin',event=>{if(!event.detail){adminViewVersion++;refreshRequestVersion++;refreshCSRF='';refreshQueued=false;$('refresh-wow').hidden=true;$('refresh-wow').disabled=true;$('refresh-wow').textContent='↻ Refresh WoW data';$('refresh-wow-feedback').hidden=true;$('refresh-wow-feedback').textContent='';adminStatus=null;evidenceLoaded=false;$('evidence-body').innerHTML='';$('sync-details').innerHTML='';$('limits').innerHTML='';if(pendingAdminTab||!$('status').hidden||!$('admin').hidden)activate('roster');window.GuildAdminOverview?.reset();pendingAdminTab=false;}else if(pendingAdminTab){const target=pendingAdminView;pendingAdminTab=false;activate(target);}});
 window.addEventListener('guild-member',event=>{const allowed=Boolean(event.detail?.is_admin);refreshCSRF=allowed?event.detail.csrf||'':'';$('refresh-wow').hidden=!allowed;$('refresh-wow').disabled=!refreshCSRF||refreshQueued;});
-const initialTab=location.hash.slice(1);activate(ROUTES[initialTab]||initialTab==='hall'?initialTab:'overview');
+const initialTab=location.hash.slice(1);activate(ROUTES[initialTab]||['hall','status'].includes(initialTab)?initialTab:'overview');
 function refreshVisiblePeople(){if(!document.hidden&&['roster','hierarchy','members'].includes(currentView))window.GuildHall?.load();}
 load();setInterval(()=>{if(!document.hidden){load();refreshVisiblePeople();}},60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden){load();refreshVisiblePeople();}});

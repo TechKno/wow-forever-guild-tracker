@@ -274,6 +274,8 @@ test('a successful website sign-in records its time independently of character o
   assert.equal(second.user.id,first.user.id);
   assert((await f.DB.prepare('SELECT signed_in_at FROM site_last_sign_in WHERE user_id=?').bind(first.user.id).first()).signed_in_at>=initial.signed_in_at);
   assert.equal((await f.DB.prepare('SELECT SUM(sign_ins) total FROM site_daily_traffic').first()).total,2);
+  assert.equal((await f.DB.prepare('SELECT account_id FROM site_battlenet_identities WHERE user_id=?').bind(first.user.id).first()).account_id,'777');
+  assert.equal((await f.DB.prepare('SELECT COUNT(*) total FROM site_sign_in_history WHERE user_id=?').bind(first.user.id).first()).total,2);
 });
 
 test('accounts with many guild alts use a bounded database batch rather than one insert per alt',async()=>{

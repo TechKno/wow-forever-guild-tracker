@@ -32,6 +32,19 @@ export async function providerJSON(url,options={}){
   try{const value=JSON.parse(text);if(!value||typeof value!=='object'||Array.isArray(value))throw 0;return value;}
   catch{throw new WebError('Battle.net account response was not recognised',502);}
 }
+export async function battleNetIdentity(accessToken) {
+  const info = await providerJSON('https://oauth.battle.net/userinfo', {
+    headers: {Authorization: 'Bearer '+accessToken}
+  });
+  const value = info.sub ?? info.id;
+  const subject = String(value ?? '');
+  if ((typeof value !== 'string' && !Number.isSafeInteger(value)) ||
+      !/^\d{1,24}$/.test(subject) ||
+      (info.sub !== undefined && info.id !== undefined && String(info.id) !== subject)) {
+    throw new WebError('Battle.net did not return a valid account ID', 502);
+  }
+  return {subject, subjectHash: await digest('https://oauth.battle.net|'+subject)};
+}
 export async function linkedCharacters(env,userId){
   const result=await env.DB.prepare(`SELECT m.data,c.data details,l.show_as_alt FROM character_links l JOIN verified_membership m ON m.character_id=l.character_id
     JOIN sync s ON m.generation=s.published LEFT JOIN characters c ON c.id=m.character_id WHERE s.id=1 AND l.user_id=? ORDER BY m.slug`).bind(userId).all();
@@ -183,10 +196,7 @@ export async function authRoute(request,env){
         Authorization:'Basic '+btoa(env.BLIZZARD_CLIENT_ID+':'+env.BLIZZARD_CLIENT_SECRET),'Content-Type':'application/x-www-form-urlencoded'},
         body:new URLSearchParams({grant_type:'authorization_code',code,redirect_uri:(pending.origin||LEGACY_ORIGIN)+'/auth/callback',code_verifier:pending.verifier}).toString()});
       if(typeof tokens.access_token!=='string')return fail('provider');
-      const info=await providerJSON('https://oauth.battle.net/userinfo',{headers:{Authorization:'Bearer '+tokens.access_token}});
-      const subject=String(info.sub??info.id??'');if(!/^\d{1,24}$/.test(subject))return fail('provider');
-      if(info.sub!==undefined&&info.id!==undefined&&String(info.sub)!==String(info.id))return fail('provider');
-      const subjectHash=await digest('https://oauth.battle.net|'+subject),created=stamp();
+      const {subject,subjectHash}=await battleNetIdentity(tokens.access_token),created=stamp();
       await env.DB.prepare(`INSERT INTO users(id,subject_hash,created_at,updated_at) VALUES(?,?,?,?) ON CONFLICT(subject_hash) DO UPDATE SET updated_at=excluded.updated_at`)
         .bind(crypto.randomUUID(),subjectHash,created,created).run();
       const user=await env.DB.prepare('SELECT * FROM users WHERE subject_hash=?').bind(subjectHash).first();
@@ -204,7 +214,7 @@ export async function authRoute(request,env){
       const signedInAt=epoch(),sessionWrites=[];
       if(old)sessionWrites.push(env.DB.prepare('DELETE FROM sessions WHERE token_hash=?').bind(await digest(old)));
       sessionWrites.push(env.DB.prepare('INSERT INTO sessions(token_hash,user_id,csrf,expires) VALUES(?,?,?,?)').bind(await digest(session),user.id,csrf,signedInAt+86400));
-      await env.DB.batch([...sessionWrites,...signInStatements(env,user.id,signedInAt)]);
+      await env.DB.batch([...sessionWrites,...signInStatements(env,user.id,signedInAt,subject)]);
       // Only a random session cookie leaves the server. A bounded encrypted user token supports account discovery.
       return redirect('/guild#overview',[setCookie('__Host-wv_session',session,86400),setCookie('__Host-wv_login','',0)]);
     }catch{return fail('provider');}

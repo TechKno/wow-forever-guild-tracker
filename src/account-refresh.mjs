@@ -1,9 +1,33 @@
-import {prepareAccountSync,random} from './auth.mjs';
+import {battleNetIdentity,prepareAccountSync,random} from './auth.mjs';
 import {decryptAccountCredential} from './account-credentials.mjs';
 export {accountSyncView} from './account-credentials.mjs';
 import {state} from './logic.mjs';
 const epoch=()=>Math.floor(Date.now()/1000),stamp=()=>new Date().toISOString();
 const safeRetry=value=>typeof value==='number'&&Number.isFinite(value)&&value>0?Math.min(3600,Math.ceil(value)):0;
+
+async function recoverBattleNetIdentity(env, now) {
+  const pending = await env.DB.prepare(`UPDATE site_battlenet_identities SET recovery_pending=0
+    WHERE user_id=(SELECT user_id FROM site_battlenet_identities WHERE recovery_pending=1 ORDER BY user_id LIMIT 1)
+    RETURNING user_id`).first();
+  if (!pending) return;
+  const grant = await env.DB.prepare(`SELECT a.user_id,a.encrypted_credential,a.expires_at,u.subject_hash
+    FROM account_refresh a JOIN users u ON u.id=a.user_id
+    WHERE a.user_id=? AND a.encrypted_credential IS NOT NULL AND a.expires_at>?
+      AND EXISTS(SELECT 1 FROM sessions s WHERE s.user_id=a.user_id AND s.expires>?)`)
+    .bind(pending.user_id, now, now).first();
+  if (!grant) return;
+  try {
+    const token = await decryptAccountCredential(env, {id:grant.user_id,subject_hash:grant.subject_hash}, grant);
+    const {subject,subjectHash} = await battleNetIdentity(token);
+    if (subjectHash !== grant.subject_hash) return;
+    await env.DB.prepare(`UPDATE site_battlenet_identities SET account_id=?
+      WHERE user_id=? AND account_id IS NULL AND EXISTS(
+        SELECT 1 FROM account_refresh a WHERE a.user_id=? AND a.encrypted_credential=? AND a.expires_at>unixepoch())`)
+      .bind(subject, grant.user_id, grant.user_id, grant.encrypted_credential).run();
+  } catch {
+    // A later normal sign-in supplies the ID if the saved authorisation cannot.
+  }
+}
 export async function refreshOneAccount(env){
   const now=epoch();
   await env.DB.prepare(`UPDATE account_refresh SET encrypted_credential=NULL,status=CASE WHEN expires_at<=? THEN 'expired' ELSE 'inactive' END,
@@ -17,7 +41,7 @@ export async function refreshOneAccount(env){
       AND a.requested_revision IS NOT NULL AND a.requested_revision<>COALESCE(a.checked_revision,'')
       AND EXISTS(SELECT 1 FROM sessions s WHERE s.user_id=a.user_id AND s.expires>?) ORDER BY a.next_at,a.user_id LIMIT 1
     ) AND lease_until<=? RETURNING *`).bind(lease,now+180,now,now,now,now,now).first();
-  if(!row)return {processed:false};
+  if(!row){await recoverBattleNetIdentity(env,now);return {processed:false};}
   const user=await env.DB.prepare('SELECT id,subject_hash,main_character_id,ownership_status,ownership_checked,updated_at FROM users WHERE id=?').bind(row.user_id).first();
   try{
     const token=await decryptAccountCredential(env,user,row),checked=stamp(),result=await prepareAccountSync(env,user,token,{maxProfiles:2,checkedAt:checked});

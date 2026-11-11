@@ -32,7 +32,7 @@ async function verifiedRows(env){
     LEFT JOIN character_profiles p ON p.character_id=l.character_id AND p.user_id=l.user_id
     WHERE u.ownership_status='verified' ORDER BY m.slug`).all()).results;
 }
-async function displayManualMappings(env,providers,active){
+export async function displayManualMappings(env,providers,active){
   const rows=(await env.DB.prepare(`SELECT a.*,m.data roster,c.data details,u.ownership_status participant_status,l.user_id provider_owner,
     d.user_id discord_owner,du.discord_id provider_discord,da.discord_id participant_discord
     FROM admin_discord_mappings a JOIN verified_membership m ON m.character_id=a.character_id AND m.generation=(SELECT published FROM sync WHERE id=1)

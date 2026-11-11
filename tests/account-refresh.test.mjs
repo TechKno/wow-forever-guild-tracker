@@ -56,6 +56,31 @@ function noSecrets(f,result){
   assert(!text.includes(TOKEN));assert(!text.includes(REFRESH));assert(!text.includes(f.env.BLIZZARD_CLIENT_SECRET));assert.equal(f.DB.raw.prepare('SELECT COUNT(*) n FROM account_refresh_guards').get().n,0);
 }
 
+test('identity recovery only records an ID that matches the existing account and does not count a new sign-in',async()=>{
+  const id='123456789012345678901234';
+  for(const matches of [true,false]){
+    const f=await fixture({save:false});
+    f.user.subject_hash=await digest('https://oauth.battle.net|'+(matches?id:'987654321'));
+    await f.DB.prepare('UPDATE users SET subject_hash=? WHERE id=?').bind(f.user.subject_hash,f.user.id).run();
+    const grant=await credentialSaveStatement(f.env,f.user,{access_token:TOKEN,expires_in:3600},f.created);
+    await grant.run();
+    await f.DB.prepare('INSERT INTO site_battlenet_identities(user_id,recovery_pending) VALUES(?,1)').bind(f.user.id).run();
+    const original=globalThis.fetch;
+    globalThis.fetch=async(url,options)=>{
+      assert.equal(String(url),'https://oauth.battle.net/userinfo');
+      assert.equal(options.headers.Authorization,'Bearer '+TOKEN);
+      return Response.json({sub:id});
+    };
+    try{
+      await refreshOneAccount(f.env);
+      const identity=await f.DB.prepare('SELECT account_id,recovery_pending FROM site_battlenet_identities WHERE user_id=?').bind(f.user.id).first();
+      assert.equal(identity.account_id,matches?id:null);
+      assert.equal(identity.recovery_pending,0);
+      assert.equal((await f.DB.prepare('SELECT COUNT(*) count FROM site_sign_in_history').first()).count,0);
+    }finally{globalThis.fetch=original;f.DB.raw.close();}
+  }
+});
+
 test('saved user authorization is randomized authenticated ciphertext bound to owner, subject, client, origin context and expiry',async()=>{
   const f=await fixture(),first=await grant(f);assert.equal(await decryptAccountCredential(f.env,f.user,first),TOKEN);noSecrets(f,{});
   const second=await credentialSaveStatement(f.env,f.user,{access_token:TOKEN,expires_in:3600,refresh_token:REFRESH},f.created);await second.run();assert.notEqual((await grant(f)).encrypted_credential,first.encrypted_credential);

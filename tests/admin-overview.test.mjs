@@ -56,7 +56,7 @@ test('the overview requires a current verified guild owner account, not only a s
   }finally{f.DB.raw.close();}
 });
 
-test('admin counts distinguish characters, site accounts and current guild accounts without exposing identities or credentials',async()=>{
+test('admin counts distinguish characters, site accounts and current guild accounts without exposing credentials',async()=>{
   const f=await fixture();
   try{
     await f.DB.prepare("INSERT INTO state VALUES('scheduler',?)").bind(JSON.stringify({last_completed:stamp()})).run();
@@ -69,7 +69,8 @@ test('admin counts distinguish characters, site accounts and current guild accou
     assert.deepEqual(result.counts,{characters:3,roster_characters:3,profile_verified_characters:0,site_accounts:3,current_member_accounts:2,discord_linked_accounts:1,members_without_discord:1,unclaimed_characters:0});
     assert.equal(result.refresh.unpublished,1);assert.equal(result.refresh.failures,1);assert.equal(result.refresh.due,2);assert.equal(result.refresh.waiting,1);
     assert.equal(result.health.scheduler.status,'healthy');assert.equal(result.health.blizzard.status,'limited');assert.equal(result.health.backups.status,'managed_by_host');
-    for(const secret of ['owner-fixture','member-fixture','private-client-id','private-client-secret','private-bot-token','private-discord-secret','private-csrf','private-subject','private-provider-route','private-provider-error','123456789012345678'])assert(!encoded.includes(secret),secret+' must stay private');
+    assert.deepEqual(result.accounts.find(row=>row.name==='Rook Testlight').discord_ids,[{id:'123456789012345678',source:'linked'}]);
+    for(const secret of ['owner-fixture','member-fixture','private-client-id','private-client-secret','private-bot-token','private-discord-secret','private-csrf','private-subject','private-provider-route','private-provider-error','123456789012345679'])assert(!encoded.includes(secret),secret+' must stay private');
   }finally{f.DB.raw.close();}
 });
 
@@ -88,22 +89,35 @@ test('the admin overview counts full page loads, groups alt sign-ins by account 
     await get('/api/public');
     assert.equal((await worker.fetch(f.ordinary,f.env)).status,403);
     await f.DB.prepare('INSERT INTO site_last_sign_in(user_id,signed_in_at) VALUES(?,?)').bind('member-fixture',epoch()).run();
+    await f.DB.prepare('INSERT INTO site_battlenet_identities(user_id,account_id) VALUES(?,?)').bind('member-fixture','123456789012345678901234').run();
+    await f.DB.prepare('INSERT INTO site_sign_in_history(user_id,signed_in_at) VALUES(?,?),(?,?)').bind('member-fixture',epoch()-100,'member-fixture',epoch()).run();
     await f.DB.prepare("INSERT INTO site_daily_traffic(day,welcome_views) VALUES(date('now','-7 days'),3)").run();
     await f.DB.prepare("INSERT INTO site_daily_traffic(day,guild_views) VALUES(date('now','-30 days'),99)").run();
     await f.DB.prepare("INSERT INTO users(id,subject_hash,ownership_status,created_at,updated_at) VALUES('manual-fixture','manual-subject','admin_mapped',?,?)").bind(stamp(),stamp()).run();
+    await insertMember(f.DB,'current',member(104,'Unclaimed'));
+    await f.DB.prepare('INSERT INTO admin_discord_mappings VALUES(?,?,?,?,?,?,?)').bind(104,'234567890123456789','manual-fixture',1,0,'owner-fixture',stamp()).run();
     const response=await worker.fetch(f.request,f.env);
     assert.equal(response.status,200);
     assert.match(response.headers.get('Cache-Control'),/no-store/);
-    const {analytics}=await response.json();
+    const {analytics,accounts}=await response.json();
     assert.deepEqual(analytics.today,{welcome_views:1,guild_views:1,sign_ins:0,accounts_signed_in:1});
     assert.equal(analytics.last_7_days.welcome_views,1);
     assert.equal(analytics.last_30_days.welcome_views,4);
     assert.equal(analytics.last_30_days.guild_views,1);
-    assert.equal(analytics.accounts.length,3);
-    assert.equal(analytics.accounts[0].character_name,'Sable Testlight');
-    assert(analytics.accounts[0].last_sign_in_at);
-    assert.equal(analytics.accounts.find(row=>row.character_name==='Rook Testlight').last_sign_in_at,null);
-    assert.doesNotMatch(JSON.stringify(analytics),/member-fixture|manual-subject|Willow Testlight/);
+    assert.equal(accounts.length,4);
+    assert.equal(accounts[0].name,'Sable Testlight');
+    assert.deepEqual(accounts[0].characters,['Sable Testlight','Willow Testlight']);
+    assert.equal(accounts[0].battle_net_id,'123456789012345678901234');
+    assert.equal(accounts[0].recent_sign_ins.length,2);
+    assert(accounts[0].last_sign_in_at);
+    const owner=accounts.find(row=>row.name==='Rook Testlight');
+    assert.equal(owner.last_sign_in_at,null);
+    assert.equal(owner.signed_in,true);
+    assert.deepEqual(owner.discord_ids,[{id:'123456789012345678',source:'linked'}]);
+    const mapped=accounts.find(row=>row.name==='Unclaimed Testlight');
+    assert.equal(mapped.signed_in,false);
+    assert.deepEqual(mapped.discord_ids,[{id:'234567890123456789',source:'mapped'}]);
+    assert.doesNotMatch(JSON.stringify(accounts),/member-fixture|manual-subject/);
   }finally{f.DB.raw.close();}
 });
 

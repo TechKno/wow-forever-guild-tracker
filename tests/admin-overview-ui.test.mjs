@@ -30,7 +30,18 @@ test('summary distinguishes characters and accounts and shows completed import d
  for(const label of ['Current characters','Verified member accounts','Linked Discord accounts','Accounts without Discord','Unpublished profiles','Initial baseline','A useful test issue']){
   if(label==='Initial baseline')assert.doesNotMatch(p.host.innerHTML,/Initial baseline/);else assert.match(p.host.innerHTML,new RegExp(label));
  }
- assert.match(p.host.innerHTML,/<td>16<\/td><td>2<\/td><td>1<\/td><td>3<\/td><td>4<\/td><td>2m 0s<\/td>/);assert.match(p.host.innerHTML,/Backup availability is managed by your host/);assert.doesNotMatch(p.host.innerHTML,/Backups verified|Backups healthy/);assert.match(p.host.innerHTML,/data-route="status"/);
+ assert.match(p.host.innerHTML,/<td>16<\/td><td>2<\/td><td>1<\/td><td>3<\/td><td>4<\/td><td>2m 0s<\/td>/);assert.match(p.host.innerHTML,/Backup availability is managed by your host/);assert.doesNotMatch(p.host.innerHTML,/Backups verified|Backups healthy/);
+});
+
+test('the accounts section renders Battle.net sign-in status, exact IDs and recorded history',async()=>{
+ const p=fixture(),last='2026-11-09T09:30:00.000Z';p.emit(auth());
+ p.state.overview.accounts=[
+   {name:'Test & Main',characters:['Test & Main','Test Alt'],signed_in:true,battle_net_id:'123456789012345678901234',discord_ids:[{id:'123456789012345678',source:'linked'}],last_sign_in_at:last,recent_sign_ins:[last,'2026-11-08T09:30:00.000Z']},
+   {name:'Roster only',characters:['Roster only'],signed_in:false,battle_net_id:null,discord_ids:[],last_sign_in_at:null,recent_sign_ins:[]}
+ ];
+ await p.api.load('accounts');
+ for(const value of ['Test &amp; Main','Test Alt','123456789012345678901234','123456789012345678','Recent sign-ins','No linked sign-in','datetime="'+last+'"'])assert(p.host.innerHTML.includes(value),value);
+ assert.doesNotMatch(p.host.innerHTML,/Roster sync history/);
 });
 
 test('rank-name edits save ten labels through the admin endpoint with CSRF and publish a display-only change',async()=>{
