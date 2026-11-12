@@ -1,6 +1,6 @@
 import {PUBLIC_ASSET_PATHS} from './config.mjs';
 import {digest,WebError} from './auth.mjs';
-const publicStatic=new Set(['/','/index.html','/welcome.html','/welcome.css','/welcome.js',...PUBLIC_ASSET_PATHS,'/privacy.html','/privacy.css','/favicon.ico','/robots.txt','/healthz']);
+const publicStatic=new Set(['/','/index.html','/welcome.html','/welcome.css','/welcome.js','/theme.css','/theme.js',...PUBLIC_ASSET_PATHS,'/privacy.html','/privacy.css','/favicon.ico','/robots.txt','/healthz']);
 
 export async function enforceRate(env,name,key){
   const limiter=env[name];

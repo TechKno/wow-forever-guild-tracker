@@ -26,7 +26,7 @@ async function fixture(){
     await DB.prepare('INSERT INTO membership VALUES(?,?,?,?)').bind(generation,member.slug,id,JSON.stringify(member)).run();
     await DB.prepare('INSERT INTO characters VALUES(?,?,?)').bind(id,JSON.stringify({profile:{level:20},professions:[{name:'Engineering',recipes:[{id:100,name:'Fine Widget'}]}]}),at).run();
   }
-  const env={DB,ASSETS:{async fetch(request){const path=new URL(request.url).pathname;assets.push({path,method:request.method});const text=path==='/welcome.html'?WELCOME:path==='/privacy.html'?'PUBLIC PRIVACY':path.startsWith('/welcome.')||['/assets/guild-banner.svg','/assets/guild-logo.svg','/privacy.css'].includes(path)?'PUBLIC ASSET':PRIVATE;return new Response(text,{headers:{'Content-Type':path.endsWith('.js')?'text/javascript':'text/html','Cache-Control':'public,max-age=86400'}});}}};
+  const env={DB,ASSETS:{async fetch(request){const path=new URL(request.url).pathname;assets.push({path,method:request.method});const text=path==='/welcome.html'?WELCOME:path==='/privacy.html'?'PUBLIC PRIVACY':(path.startsWith('/welcome.')||path.startsWith('/theme.'))||['/assets/guild-banner.svg','/assets/guild-logo.svg','/privacy.css'].includes(path)?'PUBLIC ASSET':PRIVATE;return new Response(text,{headers:{'Content-Type':path.endsWith('.js')?'text/javascript':'text/html','Cache-Control':'public,max-age=86400'}});}}};
   async function user(id,char,{checked=epoch(),status='verified',expires=epoch()+3600}={}){
     const token=random(),csrf=random();await DB.prepare('INSERT INTO users VALUES(?,?,?,?,?,?,?)').bind(id,'subject-'+id,char,status,checked,at,at).run();
     if(char)await DB.prepare('INSERT INTO character_links(character_id,user_id,verified_at) VALUES(?,?,?)').bind(char,id,at).run();
@@ -122,10 +122,10 @@ test('direct private assets and unknown HTML cannot bypass the gate even if an a
 });
 
 test('only the exact public asset allowlist bypasses authentication',async()=>{
-  const f=await fixture();for(const path of ['/welcome.css','/welcome.js','/assets/guild-banner.svg','/assets/guild-logo.svg','/privacy.html','/privacy.css']){
+  const f=await fixture();for(const path of ['/welcome.css','/welcome.js','/theme.css','/theme.js','/assets/guild-banner.svg','/assets/guild-logo.svg','/privacy.html','/privacy.css']){
     const before=f.DB.queries.length,response=await worker.fetch(anonymous(path),f.env);assert.equal(response.status,200);assert(!String(await response.text()).includes(PRIVATE));assert.equal(f.DB.queries.length,before);assert.equal(f.assets.at(-1).path,path);
   }
-  for(const path of ['/privacy.html/','/welcome.css.map','/assets/guild-banner.svg/'])assert.notEqual((await worker.fetch(anonymous(path),f.env)).status,200);
+  for(const path of ['/privacy.html/','/welcome.css.map','/theme.css.map','/assets/guild-banner.svg/'])assert.notEqual((await worker.fetch(anonymous(path),f.env)).status,200);
   for(const path of ['/favicon.ico','/robots.txt']){const response=await worker.fetch(anonymous(path),f.env);assert.equal(response.status,404);assert.equal(response.headers.get('Location'),null);assert.equal(response.headers.get('Set-Cookie'),null);}
 });
 

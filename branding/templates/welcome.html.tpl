@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="{{LANGUAGE}}">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8"><script src="/theme.js"></script>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{GUILD_NAME}} · {{SITE_TITLE}}</title>
   <meta name="description" content="{{DESCRIPTION}}">
@@ -16,12 +16,12 @@
   <link rel="icon" type="{{LOGO_TYPE}}" href="{{LOGO}}">
   <link rel="stylesheet" href="/welcome.css">
   <script src="/welcome.js" defer></script>
-<link rel="stylesheet" href="/brand.css"></head>
+<link rel="stylesheet" href="/brand.css"><link rel="stylesheet" href="/theme.css"></head>
 <body class="welcome-page">
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <a class="brand" href="/" aria-label="{{GUILD_NAME}} home"><img src="{{LOGO}}" width="72" height="80" alt=""><span>{{GUILD_NAME}}<small>{{REGION_RULESET_UPPER}}</small></span></a>
-    <nav aria-label="Main navigation"><a class="about-link" href="#about">Our company</a><a class="header-signin" href="/guild">Member sign in <span aria-hidden="true">↗</span></a></nav>
+    <nav aria-label="Main navigation"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Dark mode" aria-pressed="false" title="Toggle dark mode" hidden><span aria-hidden="true">☾</span><span aria-hidden="true">☀</span></button><a class="about-link" href="#about">Our company</a><a class="header-signin" href="/guild">Member sign in <span aria-hidden="true">↗</span></a></nav>
   </header>
   <main id="main">
     <aside id="eligibility-notice" class="eligibility-notice" role="status" hidden><div><strong>A guild character is needed to enter.</strong><p>Battle.net has not verified a current {{GUILD_NAME}} character for this account. If you used a different account, try signing in again.</p></div><a href="/auth/login">Try Battle.net again <span aria-hidden="true">↗</span></a></aside>

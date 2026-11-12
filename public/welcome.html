@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en-GB">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8"><script src="/theme.js"></script>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Example Guild · Guild Ledger</title>
   <meta name="description" content="A welcoming community for adventures, crafting and good company.">
@@ -16,12 +16,12 @@
   <link rel="icon" type="image/svg+xml" href="/assets/guild-logo.svg">
   <link rel="stylesheet" href="/welcome.css">
   <script src="/welcome.js" defer></script>
-<link rel="stylesheet" href="/brand.css"></head>
+<link rel="stylesheet" href="/brand.css"><link rel="stylesheet" href="/theme.css"></head>
 <body class="welcome-page">
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <a class="brand" href="/" aria-label="Example Guild home"><img src="/assets/guild-logo.svg" width="72" height="80" alt=""><span>Example Guild<small>EU ROLEPLAY</small></span></a>
-    <nav aria-label="Main navigation"><a class="about-link" href="#about">Our company</a><a class="header-signin" href="/guild">Member sign in <span aria-hidden="true">↗</span></a></nav>
+    <nav aria-label="Main navigation"><button class="theme-toggle" type="button" data-theme-toggle aria-label="Dark mode" aria-pressed="false" title="Toggle dark mode" hidden><span aria-hidden="true">☾</span><span aria-hidden="true">☀</span></button><a class="about-link" href="#about">Our company</a><a class="header-signin" href="/guild">Member sign in <span aria-hidden="true">↗</span></a></nav>
   </header>
   <main id="main">
     <aside id="eligibility-notice" class="eligibility-notice" role="status" hidden><div><strong>A guild character is needed to enter.</strong><p>Battle.net has not verified a current Example Guild character for this account. If you used a different account, try signing in again.</p></div><a href="/auth/login">Try Battle.net again <span aria-hidden="true">↗</span></a></aside>

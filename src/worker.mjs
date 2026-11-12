@@ -33,7 +33,7 @@ const securityHeaders={
 };
 function json(value,status=200,privateResponse=true) { return new Response(JSON.stringify(value),{status,headers:{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store',...(status===429?{'Retry-After':'60'}:{}),...(privateResponse?{'Vary':'Cookie'}:{})}}); }
 const welcomePaths=new Set(['/','/index.html','/welcome.html']);
-const publicAssets=new Set(['/welcome.css','/welcome.js','/privacy.html','/privacy.css',...PUBLIC_ASSET_PATHS]);
+const publicAssets=new Set(['/welcome.css','/welcome.js','/theme.css','/theme.js','/privacy.html','/privacy.css',...PUBLIC_ASSET_PATHS]);
 const guildPaths=new Set(['/guild','/guild/','/guild.html']);
 function privateRedirect(location){return new Response(null,{status:303,headers:{...securityHeaders,Location:location,'Cache-Control':'private, no-store','Vary':'Cookie'}});}
 async function assetResponse(request,env,path,privateResponse){
