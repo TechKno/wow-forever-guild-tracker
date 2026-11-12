@@ -48,7 +48,9 @@ export async function hallView(request,env){
       ORDER BY r.created_at DESC LIMIT 150`).all(),
     env.DB.prepare(`SELECT e.*,de.discord_id discord_event_id,dp.channel_id discord_channel_id,dp.message_id discord_message_id,dp.last_error reaction_sync_error,json_extract(m.data,'$.name') host_name FROM events e LEFT JOIN discord_events de ON de.event_id=e.id LEFT JOIN discord_event_posts dp ON dp.event_id=e.id
       LEFT JOIN verified_membership m ON m.character_id=e.character_id AND m.generation=(SELECT published FROM sync WHERE id=1)
-      WHERE e.starts_at>? ORDER BY e.starts_at LIMIT 60`).bind(new Date(Date.now()-7*86400000).toISOString()).all(),
+      WHERE e.starts_at>?
+      ORDER BY (e.status='open' AND datetime(e.starts_at,'+'||e.duration_minutes||' minutes')>datetime('now')) DESC,
+        e.starts_at LIMIT 60`).bind(new Date(Date.now()-7*86400000).toISOString()).all(),
     env.DB.prepare(`SELECT es.*,json_extract(m.data,'$.name') character_name FROM event_signups es JOIN events e ON e.id=es.event_id
       LEFT JOIN verified_membership m ON m.character_id=es.character_id AND m.generation=(SELECT published FROM sync WHERE id=1)
       WHERE e.starts_at>? ORDER BY es.updated_at`).bind(new Date(Date.now()-7*86400000).toISOString()).all(),

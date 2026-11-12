@@ -92,6 +92,12 @@ body[data-view="events"] .hall-tabs,body[data-view="members"] .hall-tabs{display
 .crafter-choice:has(input:checked){border-color:#a58245;background:var(--theme-raised, #f5e7ca)}
 .crafter-choice strong{font-size:14px;color:var(--theme-ink, #4b3925)}
 .crafter-choice small{font-size:12px;color:var(--theme-muted, #827056);line-height:1.65;margin-top:3px}
+#event-composer{order:0}
+.event-board-heading{margin:0 0 4px}
+.event-board-heading + .subtle{margin:0 0 14px}
+.event-archive{margin:0}
+.event-archive[open]>summary{border-bottom:1px solid var(--line)}
+#event-history-list{padding:16px}
 .event-card .eyebrow{font-size:11px;letter-spacing:1.5px;color:var(--theme-gold, #8b6326)}
 .event-capacity{color:var(--theme-muted, #736145)!important;font-size:14px!important;margin:20px 0 12px!important}
 .event-capacity strong{color:var(--theme-gold, #6e4b1d);font-size:30px;line-height:1.15}
@@ -178,7 +184,7 @@ body[data-view="events"] .hall-tabs,body[data-view="members"] .hall-tabs{display
 .mapping-empty{font-size:14px;color:var(--theme-muted, #75634d);line-height:1.7}
 .material-preview .component-choices label{font-size:14px}
 .hall-form .button:focus-visible,.event-signup .button:focus-visible,.event-discord-links .button:focus-visible,.event-pending summary:focus-visible,.card-actions .button:focus-visible{outline:3px solid var(--theme-gold, #a47b31);outline-offset:3px}
-@media(min-width:1450px){#craft-list,#learn-list,#event-list{grid-template-columns:repeat(2,minmax(0,1fr))}#craft-list>.empty,#learn-list>.empty,#event-list>.empty{grid-column:1/-1}}
+@media(min-width:1450px){#craft-list,#learn-list,#event-list,#event-history-list{grid-template-columns:repeat(2,minmax(0,1fr))}#craft-list>.empty,#learn-list>.empty,#event-list>.empty{grid-column:1/-1}}
 @media(max-width:1100px){#hall-people .hall-layout{grid-template-columns:1fr}.hall-welcome{align-items:flex-start;gap:10px}.hall-welcome .badge{font-size:10px}.character-mappings .section-heading{flex-wrap:wrap}}
 @media(max-width:760px){.hall-tabs{gap:4px;padding:4px;margin-bottom:20px}.hall-tabs .button{flex:none;padding:9px 12px;font-size:13px}.hall-welcome{font-size:13px;padding:12px 14px;flex-direction:column;gap:7px}.hall-card{padding:20px}.hall-card h3{font-size:24px}.hall-card .meta{font-size:12px}.hall-form{padding:20px}.hall-form input:not([type=checkbox]):not([type=radio]),.hall-form select,.hall-form textarea,.event-signup select{font-size:16px}.form-pair{grid-template-columns:1fr;gap:0}.composer>summary{padding:14px 16px;min-height:54px}.composer .hall-form{padding:22px 18px}.hall-pane .empty{padding:30px 20px;min-height:220px}.event-roles li{font-size:12px;padding:9px 10px}.event-signup select{flex-basis:100%}.event-signup .button{flex:1 1 auto}.event-attendees li{align-items:flex-start}.event-discord-links .button{flex:1;text-align:center}.event-pending{padding:14px}.attendee-role{display:block;margin:3px 0 0}.popular-panel{padding:19px 20px}.popular-list .member-name{font-size:14px}.material-list li{font-size:14px}.character-mappings .form-pair{grid-template-columns:1fr;gap:0}.mapping-row-actions{min-width:100px}.mapping-table td,.mapping-table code{font-size:12px}.quest-choices{grid-template-columns:1fr}#quest-form,#quest-result{padding:20px}.hall-layout>.hall-form{order:initial}.component-list li{font-size:13px}.history-entry p{font-size:13px}}
 @media(prefers-reduced-motion:reduce){.hall-form{scroll-behavior:auto}}

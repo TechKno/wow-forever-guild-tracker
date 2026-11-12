@@ -150,9 +150,7 @@
     el('learn-list').innerHTML=learn.length?learn.map(requestCard).join(''):'<div class="panel empty"><span class="empty-symbol" aria-hidden="true">✧</span><h3>What would you like to learn?</h3><p>Add a recipe so the guild knows what to keep an eye out for.</p><button class="button primary" type="button" data-compose="learn">Add a recipe wishlist</button></div>';
     el('popular-list').innerHTML=hall.popular?.length?`<ol class="popular-list">${hall.popular.map(r=>`<li><div><button class="member-name" data-popular="${esc(r.item_name)}" data-recipe-id="${r.recipe_id||''}">${esc(r.item_name)}</button><small>${r.request_count} ${r.request_count===1?'request':'requests'} · ${r.member_count} ${r.member_count===1?'member':'members'} · ${r.active_count} active</small></div><strong>${r.total_crafts}<small>crafts</small></strong></li>`).join('')}</ol>`:'<p class="subtle">Post requests to see what the guild needs most.</p>';
   }
-  function eventCard(event){
-    const ended=Date.parse(event.starts_at)+(Number(event.duration_minutes)||120)*60000<=Date.now();
-    const active=event.status==='open'&&!ended;
+  function eventCard(event, status, active){
     const signups=event.signups||[],mine=signups.find(s=>s.own),pending=event.pending_reactions||[];
     const roles=['Dungeon','Raid'].includes(event.kind)?['Tank','Healer','Damage']:event.kind==='Roleplay'?['Roleplay','Social']:['Tank','Healer','Damage','Roleplay','Social'];
     const icons={Tank:'🛡️',Healer:'💚',Damage:'⚔️',Roleplay:'🎭',Social:'🍻'};
@@ -161,7 +159,33 @@
     const announcement=active&&event.discord_message_url?`<a class="button" href="${esc(event.discord_message_url)}" target="_blank" rel="noreferrer">Open Discord announcement ↗</a>`:'';
     const scheduled=active&&event.discord_event_id&&hall.discord_guild_id?`<a class="button" href="https://discord.com/events/${esc(hall.discord_guild_id)}/${esc(event.discord_event_id)}" target="_blank" rel="noreferrer">View Discord event ↗</a>`:'';
     const unconfirmed=pending.length?`<details class="event-pending" open><summary>${pending.length} Discord ${pending.length===1?'reaction not added':'reactions not added'}</summary><p>These reactions are not confirmed sign-ups and do not occupy a place.</p><ul>${pending.map(p=>`<li><strong>${esc(p.name||'Discord member')}</strong>${Array.isArray(p.roles)&&p.roles.length?' · '+p.roles.map(esc).join(', '):''}${p.reason?`<span>${esc(p.reason)}</span>`:''}</li>`).join('')}</ul></details>`:'';
-    return `<article class="panel hall-card event-card"><span class="eyebrow gold">${esc(event.kind)}${event.status==='cancelled'?' · CANCELLED':ended?' · ENDED':''}</span><h3>${esc(event.title)}</h3><p class="meta">${esc(date(event.starts_at))} · ${event.duration_minutes||120} minutes · Hosted by ${esc(event.host_name||'a guild member')}</p>${event.location?`<p>Meet at ${esc(event.location)}</p>`:''}${event.description?`<p class="note">${esc(event.description)}</p>`:''}<p class="event-capacity"><strong>${signups.length} / ${event.capacity}</strong> confirmed places</p>${roleSummary}${window.GuildEventTemplates?.eventGuidance(event)||''}${announcement||scheduled?`<div class="event-discord-links">${announcement}${scheduled}</div>`:''}${announcement&&active?`<p class="subtle event-reaction-note">React to the announcement to choose your role, or sign up below. Authorise ${esc(SITE_BRAND.botName)} in Members &amp; roleplay, or ask a guild administrator to map your character. Discord changes update in batches and may take a few minutes to appear. Changes you make here stay in place until you change your Discord role reactions.</p>`:''}${active&&event.reaction_sync_error?`<p class="event-sync-error" role="status"><strong>Discord reactions need attention.</strong> ${esc(event.reaction_sync_error)} The confirmed list below shows the last saved sign-ups.</p>`:''}<h4 class="event-list-heading">Confirmed sign-ups</h4>${signups.length?`<ul class="event-attendees">${signups.map(s=>`<li><div><strong>${esc(s.character_name||'Former guild character')}</strong>${s.own?' <span class="event-you">You</span>':''}<span class="attendee-role">${esc(s.role)}</span></div><span class="signup-source ${s.source==='discord'?'discord':'web'}">${s.source==='discord'?'Discord reaction':'Website'}</span>${s.note?`<p>${esc(s.note)}</p>`:''}</li>`).join('')}</ul>`:'<p class="subtle">No confirmed sign-ups yet.</p>'}${unconfirmed}${active?`<div class="event-signup"><select data-event-character="${event.id}" aria-label="Character for ${esc(event.title)}">${characterOptions(mine?.character_id||me.main_character_id)}</select><select data-event-role="${event.id}" aria-label="Role for ${esc(event.title)}"><option value="">Choose your role</option>${roles.map(role=>{const limit=event.role_limits?.[role],full=limit!=null&&count(role)>=limit;return `<option value="${esc(role)}" ${mine?.role===role?'selected':''} ${full&&mine?.role!==role?'disabled':''}>${esc(role)}${limit!=null?` (${count(role)}/${Number(limit)}${full?' · full':''})`:''}</option>`;}).join('')}</select><button class="button" data-event="${event.id}" data-action="join">${mine?'Update sign-up':'Join event'}</button>${mine?`<button class="button" data-event="${event.id}" data-action="leave">Leave</button>`:''}${event.own?`<button class="button" data-event="${event.id}" data-action="cancel">Cancel event</button>`:''}</div>`:''}</article>`;
+    return `<article class="panel hall-card event-card"><span class="eyebrow gold">${esc(event.kind)} · ${status}</span><h3>${esc(event.title)}</h3><p class="meta">${esc(date(event.starts_at))} · ${event.duration_minutes||120} minutes · Hosted by ${esc(event.host_name||'a guild member')}</p>${event.location?`<p>Meet at ${esc(event.location)}</p>`:''}${event.description?`<p class="note">${esc(event.description)}</p>`:''}<p class="event-capacity"><strong>${signups.length} / ${event.capacity}</strong> confirmed places</p>${roleSummary}${window.GuildEventTemplates?.eventGuidance(event)||''}${announcement||scheduled?`<div class="event-discord-links">${announcement}${scheduled}</div>`:''}${announcement&&active?`<p class="subtle event-reaction-note">React to the announcement to choose your role, or sign up below. Authorise ${esc(SITE_BRAND.botName)} in Members &amp; roleplay, or ask a guild administrator to map your character. Discord changes update in batches and may take a few minutes to appear. Changes you make here stay in place until you change your Discord role reactions.</p>`:''}${active&&event.reaction_sync_error?`<p class="event-sync-error" role="status"><strong>Discord reactions need attention.</strong> ${esc(event.reaction_sync_error)} The confirmed list below shows the last saved sign-ups.</p>`:''}<h4 class="event-list-heading">Confirmed sign-ups</h4>${signups.length?`<ul class="event-attendees">${signups.map(s=>`<li><div><strong>${esc(s.character_name||'Former guild character')}</strong>${s.own?' <span class="event-you">You</span>':''}<span class="attendee-role">${esc(s.role)}</span></div><span class="signup-source ${s.source==='discord'?'discord':'web'}">${s.source==='discord'?'Discord reaction':'Website'}</span>${s.note?`<p>${esc(s.note)}</p>`:''}</li>`).join('')}</ul>`:'<p class="subtle">No confirmed sign-ups yet.</p>'}${unconfirmed}${active?`<div class="event-signup"><select data-event-character="${event.id}" aria-label="Character for ${esc(event.title)}">${characterOptions(mine?.character_id||me.main_character_id)}</select><select data-event-role="${event.id}" aria-label="Role for ${esc(event.title)}"><option value="">Choose your role</option>${roles.map(role=>{const limit=event.role_limits?.[role],full=limit!=null&&count(role)>=limit;return `<option value="${esc(role)}" ${mine?.role===role?'selected':''} ${full&&mine?.role!==role?'disabled':''}>${esc(role)}${limit!=null?` (${count(role)}/${Number(limit)}${full?' · full':''})`:''}</option>`;}).join('')}</select><button class="button" data-event="${event.id}" data-action="join">${mine?'Update sign-up':'Join event'}</button>${mine?`<button class="button" data-event="${event.id}" data-action="leave">Leave</button>`:''}${event.own?`<button class="button" data-event="${event.id}" data-action="cancel">Cancel event</button>`:''}</div>`:''}</article>`;
+  }
+  let eventBoardTimer;
+  function renderEvents(){
+    clearTimeout(eventBoardTimer);
+    if(!hall)return;
+    const now=Date.now(), active=[], past=[];
+    let nextChange=Infinity;
+    for(const event of hall.events){
+      const start=Date.parse(event.starts_at);
+      const end=start+(Number(event.duration_minutes)||120)*60000;
+      const open=event.status==='open'&&end>now;
+      const status=event.status==='cancelled'?'Cancelled':!open?'Ended':start<=now?'In progress':'Upcoming';
+      (open?active:past).push({event,start,status});
+      if(open)nextChange=Math.min(nextChange,start>now?start:end);
+    }
+    active.sort((a,b)=>a.start-b.start);
+    past.sort((a,b)=>b.start-a.start);
+    el('event-list').innerHTML=active.length
+      ? active.map(({event,status})=>eventCard(event,status,true)).join('')
+      : '<div class="panel empty small"><p>No active events.</p></div>';
+    const history=el('event-history');
+    history.hidden=past.length===0;
+    if(history.hidden)history.open=false;
+    el('event-history-count').textContent=past.length+(past.length===1?' event':' events');
+    el('event-history-list').innerHTML=past.map(({event,status})=>eventCard(event,status,false)).join('');
+    if(Number.isFinite(nextChange))eventBoardTimer=setTimeout(renderEvents,Math.min(nextChange-now,2147483647));
   }
   function renderDirectory(){
     const provenance=char=>{
@@ -193,8 +217,7 @@
     if(busy)return hallPromise;busy=true;hallRefreshQueued=false;
     const version=accountRefreshVersion;
     hallPromise=(async()=>{try{if(!await refreshMe()||version!==accountRefreshVersion||!me.verified)return;const account=me.csrf,user=me.user_id,revision=accountRevision(me),result=await fetchJSON('/api/hall');if(!me.verified||me.csrf!==account||me.user_id!==user||accountRevision(me)!==revision||version!==accountRefreshVersion)return;hall=result;renderRequests();renderDirectory();
-      const visibleEvents=hall.events.filter(event=>event.status!=='cancelled');
-      el('event-list').innerHTML=visibleEvents.length?visibleEvents.map(eventCard).join(''):'<div class="panel empty"><span class="empty-symbol" aria-hidden="true">✦</span><h3>The noticeboard is quiet.</h3><p>Gather a dungeon party or arrange a guild evening.</p><button class="button primary" type="button" data-compose="events">Plan an event</button></div>';fillProfile();
+      renderEvents();fillProfile();
       window.dispatchEvent(new CustomEvent('guild-hall-data',{detail:hall}));
     }catch(error){if(version===accountRefreshVersion)feedback(error.message,true);}finally{busy=false;hallPromise=null;if(hallRefreshQueued)loadHall();}})();
     return hallPromise;
@@ -294,7 +317,8 @@
       if(button.dataset.event&&data.action==='join'){
         data.character_id=document.querySelector(`[data-event-character="${id}"]`).value;data.role=document.querySelector(`[data-event-role="${id}"]`).value;
       }
-      const result=await send('/api/hall/'+(button.dataset.request?'requests/':'events/')+id,data);feedback(result.message);await loadHall();
+      const result=await send('/api/hall/'+(button.dataset.request?'requests/':'events/')+id,data);feedback(result.message);
+      await loadHall({queue:Boolean(button.dataset.event)&&data.action==='cancel'});
     }catch(error){feedback(error.message,true);}finally{button.disabled=false;}
   });
   const materialBox=document.createElement('div');materialBox.id='craft-materials';materialBox.className='material-preview';

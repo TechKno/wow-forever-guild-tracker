@@ -50,5 +50,5 @@ test('the instance guide preview uses the sourced catalogue without creating eve
   const guide=JSON.parse((await get(url,{path:'/api/event-templates'})).body);assert.equal(guide.templates.length,38);assert.equal(guide.templates.filter(row=>row.kind==='Dungeon').length,35);assert.equal(guide.templates.filter(row=>row.kind==='Raid'&&row.status==='announced').length,3);
   assert(guide.templates.every(row=>row.minimum_level===null&&row.sources.length));
   assert.equal((await get(url,{path:'/api/event-templates',method:'POST'})).status,400);
-  assert.equal(JSON.parse((await get(url,{path:'/api/hall'})).body).events.length,1);
+  assert.deepEqual(JSON.parse((await get(url,{path:'/api/hall'})).body).events.map(row=>row.id),['demo-ended','demo-deadmines','demo-cancelled']);
 }));

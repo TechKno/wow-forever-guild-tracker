@@ -61,12 +61,19 @@ export function demoFixtures(){
   const starts=new Date();starts.setUTCDate(starts.getUTCDate()+1);starts.setUTCHours(21,0,0,0);
   const event={id:'demo-deadmines',title:'An evening in the Deadmines',kind:'Dungeon',status:'open',starts_at:starts.toISOString(),duration_minutes:120,capacity:5,location:'Moonbrook, Westfall',description:'A relaxed run, a few quests, and good company. New adventurers welcome.',host_name:'Brann Oakshield',character_id:101,own:false,
     signups:[{character_id:101,character_name:'Brann Oakshield',role:'Tank',source:'web',own:false},{character_id:105,character_name:'Tamsin Hearthwood',role:'Healer',source:'web',own:true}],role_limits:{Tank:1,Healer:1,Damage:3},pending_reactions:[]};
+  const events=[
+    {...event,id:'demo-ended',title:'An evening of fishing',kind:'Other',starts_at:new Date(Date.now()-3*3600000).toISOString(),
+      location:'Crystal Lake, Elwynn Forest',description:'An evening by the water.',role_limits:null,signups:[]},
+    event,
+    {...event,id:'demo-cancelled',title:'A walk through Westfall',kind:'Roleplay',status:'cancelled',
+      location:'Sentinel Hill, Westfall',description:'A quiet walk and a campfire.',role_limits:null,signups:[]}
+  ];
   const requests=[
     {id:'demo-bags',kind:'craft',status:'open',recipe_id:1001,item_name:'Linen Bag',character_id:103,character_name:'Orrin Quickstep',quantity:2,created_at:observedAt,materials_preference:'provided',materials:materialPlan(2),notes:'Two bags for an adventurer whose pockets are always full.',targets:[{character_id:104,name:'Pippa Cogwhistle'}],asked_me:false,own:false,claimed_by_me:false,discord_channel_status:null},
     {id:'demo-potions',kind:'craft',status:'claimed',recipe_id:1004,item_name:'Minor Healing Potion',character_id:108,character_name:'Dorrin Ironhand',quantity:5,created_at:'2026-11-09T08:30:00.000Z',materials_preference:'discuss',materials:{status:'member_provided',manual:'5 Peacebloom, 5 Silverleaf and 5 Empty Vials.'},notes:'A little preparation before tomorrow’s adventure.',targets:[],crafter_name:'Tamsin Hearthwood',asked_me:false,own:false,claimed_by_me:true,discord_channel_status:null},
     {id:'demo-wishlist',kind:'learn',status:'open',recipe_id:null,item_name:'Red Linen Bag',character_id:102,character_name:'Liora Sunweaver',quantity:1,created_at:observedAt,notes:'Please keep an eye out while exploring.',targets:[],own:false}
   ];
-  const hall={events:[event],requests,directory:people.flatMap(person=>person.characters.map(character=>({...character,user_id:'demo-'+owners.get(character.id)}))),people,display_groups:rosterDisplayGroups(people),popular:[{recipe_id:1001,item_name:'Linen Bag',request_count:6,member_count:4,total_crafts:10,active_count:2},{recipe_id:1004,item_name:'Minor Healing Potion',request_count:4,member_count:3,total_crafts:20,active_count:1}]};
+  const hall={events,requests,directory:people.flatMap(person=>person.characters.map(character=>({...character,user_id:'demo-'+owners.get(character.id)}))),people,display_groups:rosterDisplayGroups(people),popular:[{recipe_id:1001,item_name:'Linen Bag',request_count:6,member_count:4,total_crafts:10,active_count:2},{recipe_id:1004,item_name:'Minor Healing Potion',request_count:4,member_count:3,total_crafts:20,active_count:1}]};
   const status={guild:{name:CONFIG.guild.name,ruleset:CONFIG.guild.region.toUpperCase()+' '+CONFIG.guild.ruleset.name},sync:{published:generation,membership_revision:generation,status:'ready',updated:observedAt,roster_at:observedAt,total:members.length},refresh:{last_success_at:observedAt,roster_at:observedAt,last_character_check_at:observedAt,oldest_professions_at:observedAt,latest_professions_at:observedAt,pending:0},demo:true};
   const me={signed_in:true,verified:true,is_admin:true,user_id:'demo-tamsin',display_name:'Tamsin Hearthwood',ownership_checked_at:observedAt,main_character_id:105,characters,player_links:links,csrf:'demo-read-only',message:'Fictional demonstration account. No real sign-in has taken place.',discord:{configured:true,linked:true,requester_dm:true,crafter_dm:false},demo:true};
   return {members,links,hall,status,me};

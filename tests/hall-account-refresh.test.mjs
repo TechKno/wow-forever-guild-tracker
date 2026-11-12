@@ -12,14 +12,44 @@ function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{reso
 async function settle(){for(let n=0;n<3;n++)await new Promise(resolve=>setImmediate(resolve));}
 function page(){
   const events=[],calls=[],listeners=new Map(),elements=new Map(),accepted=[],rendered=[],feedback=[],replies={me:[],hall:[]};
-  const el=id=>{if(!elements.has(id))elements.set(id,{hidden:false,textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {textContent:''};}});return elements.get(id);};
+  let now=Date.parse(OLD), timer=null;
+  const el=id=>{if(!elements.has(id))elements.set(id,{hidden:false,open:false,textContent:'',innerHTML:'',classList:{toggle(){}},querySelector(){return {textContent:''};}});return elements.get(id);};
   const window={GuildAccount:{render(value){accepted.push(clean(value));}},addEventListener(type,handler){if(!listeners.has(type))listeners.set(type,[]);listeners.get(type).push(handler);},dispatchEvent(event){events.push({type:event.type,detail:clean(event.detail)});for(const handler of listeners.get(event.type)||[])handler(event);}};
-  const context=vm.createContext({me:session(),hall:null,busy:false,roleDrafts:new Map(),profileDrafts:new Map(),window,el,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}},renderDiscord(){},fillOwned(){},renderRequests(){},renderDirectory(){rendered.push(clean(context.hall));},fillProfile(){},eventCard(){return '';},feedback(message){feedback.push(message);},async fetchJSON(path){calls.push(path);assert(calls.length<30,'A refresh event must not create an infinite request loop');const queue=path==='/api/me'?replies.me:replies.hall;assert(queue.length,'Unexpected '+path+' request');return clean(await queue.shift());}});
+  const context=vm.createContext({me:session(),hall:null,busy:false,roleDrafts:new Map(),profileDrafts:new Map(),window,el,CustomEvent:class{constructor(type,options){this.type=type;this.detail=options.detail;}},renderDiscord(){},fillOwned(){},renderRequests(){},renderDirectory(){rendered.push(clean(context.hall));},fillProfile(){},eventCard(event,status,active){return '['+event.title+': '+status+' '+(active?'active':'history')+']';},feedback(message){feedback.push(message);},async fetchJSON(path){calls.push(path);assert(calls.length<30,'A refresh event must not create an infinite request loop');const queue=path==='/api/me'?replies.me:replies.hall;assert(queue.length,'Unexpected '+path+' request');return clean(await queue.shift());},
+    Date:{parse:Date.parse,now:()=>now},setTimeout(callback,delay){timer={callback,at:now+delay};return timer;},clearTimeout(previous){if(previous===timer)timer=null;}});
   const start=source.indexOf('  let accountRefreshVersion='),end=source.indexOf('  function renderDiscord(){',start),loadStart=source.indexOf('  function loadHall(options='),loadEnd=source.indexOf('  function recipeInput(){',loadStart);
-  assert(start>=0&&end>start&&loadStart>=0&&loadEnd>loadStart);vm.runInContext(source.slice(start,end)+'\n'+source.slice(loadStart,loadEnd),context);
+  const eventStart=source.indexOf('  let eventBoardTimer;'),eventEnd=source.indexOf('  function renderDirectory(){',eventStart);
+  assert(start>=0&&end>start&&loadStart>=0&&loadEnd>loadStart&&eventStart>=0&&eventEnd>eventStart);
+  vm.runInContext(source.slice(start,end)+'\n'+source.slice(eventStart,eventEnd)+'\n'+source.slice(loadStart,loadEnd),context);
   vm.runInContext("window.addEventListener('guild-account-saved',accountSaved);",context);
-  return {context,calls,events,accepted,rendered,feedback,replies,window,load:options=>context.loadHall(options),refresh:()=>context.refreshMe(),save(revision=NEW,user_id='fixture-owner'){window.dispatchEvent(new context.CustomEvent('guild-account-saved',{detail:{user_id,account_updated_at:revision}}));},players:()=>events.filter(event=>event.type==='guild-players'),halls:()=>events.filter(event=>event.type==='guild-hall-data')};
+  return {context,calls,events,accepted,rendered,feedback,replies,window,el,load:options=>context.loadHall(options),refresh:()=>context.refreshMe(),save(revision=NEW,user_id='fixture-owner'){window.dispatchEvent(new context.CustomEvent('guild-account-saved',{detail:{user_id,account_updated_at:revision}}));},players:()=>events.filter(event=>event.type==='guild-players'),halls:()=>events.filter(event=>event.type==='guild-hall-data'),
+    advanceTo(at){now=Date.parse(at);if(timer?.at<=now){const {callback}=timer;timer=null;callback();}}};
 }
+
+test('the event board separates current events from collapsed history and moves an event there at its end time',async()=>{
+  const p=page();
+  const event=(title,starts_at,status='open')=>({title,starts_at,status,duration_minutes:30});
+  p.replies.me.push(session());
+  p.replies.hall.push({...hallData('mixed'),events:[
+    event('Future','2026-11-09T12:00:00Z'),
+    event('Cancelled plan','2026-11-09T11:00:00Z','cancelled'),
+    event('Ongoing','2026-11-09T09:40:00Z'),
+    event('Finished','2026-11-09T09:00:00Z')
+  ]});
+  await p.load();
+  assert.equal(p.el('event-list').innerHTML,'[Ongoing: In progress active][Future: Upcoming active]');
+  assert.equal(p.el('event-history-list').innerHTML,'[Cancelled plan: Cancelled history][Finished: Ended history]');
+  assert.equal(p.el('event-history-count').textContent,'2 events');
+  assert.equal(p.el('event-history').hidden,false);
+  assert.equal(p.el('event-history').open,false);
+
+  p.advanceTo('2026-11-09T10:10:00Z');
+  assert.equal(p.el('event-list').innerHTML,'[Future: Upcoming active]');
+  assert.match(p.el('event-history-list').innerHTML,/\[Ongoing: Ended history\]/);
+  assert.equal(p.el('event-history-count').textContent,'3 events');
+  assert.equal(p.el('event-history').open,false);
+  assert.deepEqual(p.calls,['/api/me','/api/hall']);
+});
 
 test('saving while an old account refresh is pending prevents stale player links and queues one fresh Hall load',async()=>{
   const p=page(),old=deferred();p.replies.me.push(old.promise,session(NEW,2));p.replies.hall.push(hallData('fresh'));
