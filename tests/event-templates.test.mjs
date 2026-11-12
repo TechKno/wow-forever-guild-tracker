@@ -34,6 +34,19 @@ test('catalogue retains source confidence and differentiates announced content f
   const published=eventTemplateCatalogue(catalogue());assert.equal(published.templates.length,1);assert.equal(published.templates[0].status,'announced');assert.equal(published.templates[0].minimum_level,null);assert.equal(published.templates[0].minimum_level_status,'unverified');assert.equal(published.templates[0].role_status,'suggested');
   const invalid=catalogue();invalid.templates.push(invalid.templates[0]);assert.throws(()=>eventTemplateCatalogue(invalid));
   const unsafe=catalogue();unsafe.templates[0].sources.push({title:'Bad source',url:'javascript:alert(1)'});assert.equal(eventTemplateCatalogue(unsafe).templates[0].sources.length,1);
+  const dungeons=eventTemplateCatalogue().templates.filter(row=>row.kind==='Dungeon');
+  assert.equal(dungeons.length,35);
+  assert.equal(dungeons.filter(row=>row.capacity_status==='verified'&&row.capacity===5).length,9);
+  assert.equal(dungeons.filter(row=>row.capacity_status==='group_finder'&&row.recommended_level_status==='group_finder').length,26);
+  const upper=eventTemplateSettings({template_id:'upper-blackrock-spire'});
+  assert.equal(upper.capacity,10);
+  assert.deepEqual(upper.role_limits,{Tank:2,Healer:2,Damage:6});
+  assert.deepEqual(upper.template_guidance.recommended_level,{min:59,max:60});
+  assert.equal(upper.template_guidance.minimum_level,null);
+  assert(eventGuideLines({template_guidance:upper.template_guidance}).some(line=>line.includes('59–60 · Forever Group Finder')));
+  const lower=dungeons.find(row=>row.id==='lower-blackrock-spire');
+  assert.equal(lower.capacity,5);
+  assert.deepEqual(lower.recommended_level,{min:55,max:60});
 });
 
 test('role allocations accept zeroes and require whole appropriate roles adding up to total capacity',()=>{

@@ -36,9 +36,9 @@ function normalizedTemplate(value,{snapshot=false}={}){
   const capacity=integer(value.capacity,1,40,'The suggested group size is unavailable'),minimum=level(value.minimum_level),recommended=levelRange(value.recommended_level);
   return {id,name,kind,capacity,role_limits:value.role_limits?validateEventRoleLimits(value.role_limits,capacity,kind):null,
     minimum_level:minimum,recommended_level:recommended,location:clean(value.location,100),duration_minutes:integer(value.duration_minutes??120,15,720,'The suggested duration is unavailable'),
-    status:enumValue(value.status,['available','announced','unverified'],'unverified'),capacity_status:enumValue(value.capacity_status,['verified','unverified'],'unverified'),
+    status:enumValue(value.status,['available','announced','unverified'],'unverified'),capacity_status:enumValue(value.capacity_status,['verified','group_finder','unverified'],'unverified'),
     minimum_level_status:enumValue(value.minimum_level_status,snapshot?['verified','unverified','guide']:['verified','unverified'],'unverified'),
-    recommended_level_status:enumValue(value.recommended_level_status,['verified','guide','unverified'],'unverified'),role_status:'suggested',notes:clean(value.notes,1500),sources:sources(value.sources),
+    recommended_level_status:enumValue(value.recommended_level_status,['verified','group_finder','guide','unverified'],'unverified'),role_status:'suggested',notes:clean(value.notes,1500),sources:sources(value.sources),
     ...(snapshot?{level_guide_source:enumValue(value.level_guide_source,['catalogue','member'],'catalogue'),minimum_level_source:enumValue(value.minimum_level_source,['catalogue','member'],'catalogue'),recommended_level_source:enumValue(value.recommended_level_source,['catalogue','member'],'catalogue'),catalogue_checked_at:typeof value.catalogue_checked_at==='string'&&Number.isFinite(Date.parse(value.catalogue_checked_at))?value.catalogue_checked_at:null}: {})};
 }
 export function eventTemplateCatalogue(catalogue=EVENT_CATALOGUE){
@@ -76,7 +76,12 @@ export function eventTemplateGuidance(event){
 }
 export function eventGuideLines(event){
   const guide=eventTemplateGuidance(event);if(!guide)return [];
-  const status=(value,minimum)=>value==='verified'?(minimum?'published entry requirement':'published level range'):value==='guide'?((minimum?guide.minimum_level_source:guide.recommended_level_source)==='member'?'host guide':'recommended guide'):'Forever requirement unverified';
+  const status=(value,minimum)=>{
+    if(value==='verified')return minimum?'published entry requirement':'published level range';
+    if(value==='group_finder')return 'Forever Group Finder';
+    if(value==='guide')return (minimum?guide.minimum_level_source:guide.recommended_level_source)==='member'?'host guide':'recommended guide';
+    return 'Forever requirement unverified';
+  };
   return [guide.status==='announced'?'Announced content · planning ahead; check availability before the run.':'',guide.minimum_level!==null?`Minimum level ${guide.minimum_level} · ${status(guide.minimum_level_status,true)}`:'Minimum entry level has not been verified.',
     guide.recommended_level?`Recommended levels ${guide.recommended_level.min}–${guide.recommended_level.max} · ${status(guide.recommended_level_status,false)}`:'',
     guide.notes?guide.notes.slice(0,220):''].filter(Boolean);
