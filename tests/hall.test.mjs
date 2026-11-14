@@ -8,7 +8,7 @@ import {buildMaterialPlan,normalizeRecipe} from '../src/materials.mjs';
 import {flushDiscord,discordAuth,dungeonPayload} from '../src/discord.mjs';
 import {compareQuests,characterQuests} from '../src/quests.mjs';
 import {recordProgress} from '../src/progress.mjs';
-import {publishEventPost,pollOneEventPost,eventAnnouncement,effectivePermissions,reactionRoles} from '../src/event-posts.mjs';
+import {publishEventPost,pollOneEventPost,syncOneScheduledEvent,scheduledEventDescription,eventAnnouncement,effectivePermissions,reactionRoles} from '../src/event-posts.mjs';
 import {signupStatement,roleLimits} from '../src/events.mjs';
 const epoch=()=>Math.floor(Date.now()/1000);
 async function seedOpenRequests(DB,owner,character,count,kind='craft'){
@@ -400,7 +400,11 @@ async function withEventDiscord(snapshot,run){
     }
     if(path.endsWith('/scheduled-events/789012345678901235')){
       if(method==='GET')return state.scheduled[0]?Response.json(state.scheduled[0]):Response.json({},{status:404});
-      if(method==='PATCH')return Response.json({...state.scheduled[0],...body});
+      if(method==='PATCH'){
+        if(state.responses.scheduledEdit)return state.responses.scheduledEdit();
+        state.scheduled[0]={...state.scheduled[0],...body};
+        return Response.json(state.scheduled[0]);
+      }
       if(method==='DELETE'){state.scheduled=[];return new Response(null,{status:204});}
     }
     if(path.endsWith('/channels/'+eventChannel)&&method==='GET')return Response.json({id:eventChannel,guild_id:'234567890123456789'});
@@ -460,6 +464,14 @@ test('event delivery posts once, edits the original for joins, and deletes both 
     assert.equal((await worker.fetch(f.b.request('/api/hall/events/'+event.id,{action:'join',character_id:102,role:'Healer'}),f.env)).status,200);
     await flushDiscord(f.env);
     assert(state.calls.some(c=>c.method==='PATCH'&&c.url.endsWith('/messages/'+eventMessage)&&c.body.content.includes('Bob Example')));
+    await syncOneScheduledEvent(f.env);
+    assert.match(state.message.content,/Healer\s+1\/1\s+0\s+Bob Example/);
+    assert.match(state.scheduled[0].description,/Confirmed: 1\/5 · 4 open/);
+    assert.match(state.scheduled[0].description,/Healer\s+1\/1\s+0\s+Bob Example/);
+    assert.match(state.scheduled[0].description,new RegExp(eventMessage));
+    const updates=state.calls.length;
+    await syncOneScheduledEvent(f.env);
+    assert.equal(state.calls.length,updates,'An unchanged party does not call Discord again');
     assert.equal((await worker.fetch(f.a.request('/api/hall/events/'+event.id,{action:'cancel'}),f.env)).status,200);await flushDiscord(f.env);
     const edits=state.calls.filter(c=>c.method==='PATCH'&&c.url.endsWith('/messages/'+eventMessage));assert(edits.at(-1).body.content.includes('Bob Example'));
     for(const edit of edits)assert.deepEqual(edit.body.allowed_mentions,{parse:[]});
@@ -473,6 +485,57 @@ test('event delivery posts once, edits the original for joins, and deletes both 
     assert.equal((await f.DB.prepare('SELECT COUNT(*) count FROM discord_events WHERE event_id=?').bind(event.id).first()).count,0);
     assert.equal((await f.DB.prepare('SELECT status FROM events WHERE id=?').bind(event.id).first()).status,'cancelled');
     assert.equal((await f.DB.prepare('SELECT COUNT(*) count FROM event_signups WHERE event_id=?').bind(event.id).first()).count,1,'Cancellation retains website signup history');
+  });
+});
+
+test('Discord reactions and withdrawals refresh the scheduled event with confirmed character names and vacancies',async()=>{
+  const f=await fixture(),event=await createEvent(f);
+  await link(f.DB,f.a.id,discordMembers.a,0,0);
+  await withEventDiscord({Tank:[{id:discordMembers.a,global_name:'Discord nickname'}],Damage:[{id:discordMembers.unknown,global_name:'Unmatched'}]},async state=>{
+    await flushDiscord(f.env);
+    await pollEvent(f,event);
+    await syncOneScheduledEvent(f.env);
+    assert.match(state.scheduled[0].description,/Tank\s+1\/1\s+0\s+Alice Example/);
+    assert.match(state.scheduled[0].description,/Confirmed: 1\/5 · 4 open/);
+    assert.doesNotMatch(state.scheduled[0].description,/Discord nickname|Unmatched/);
+    state.snapshot={};
+    await pollEvent(f,event);
+    await syncOneScheduledEvent(f.env);
+    assert.match(state.scheduled[0].description,/Tank\s+0\/1\s+1\s+—/);
+    assert.match(state.scheduled[0].description,/Confirmed: 0\/5 · 5 open/);
+    assert.doesNotMatch(state.scheduled[0].description,/Alice Example/);
+    state.scheduled[0].creator_id=discordMembers.unknown;
+    await worker.fetch(f.b.request('/api/hall/events/'+event.id,{action:'join',character_id:102,role:'Healer'}),f.env);
+    const patches=state.calls.filter(c=>c.method==='PATCH').length;
+    await syncOneScheduledEvent(f.env);
+    assert.equal(state.calls.filter(c=>c.method==='PATCH').length,patches);
+    const sync=await f.DB.prepare('SELECT * FROM discord_events').first();
+    assert(sync.signup_revision>sync.synced_revision);
+    assert.match(sync.signup_sync_error,/ownership/);
+  });
+});
+
+test('scheduled event sync retries a throttled edit using the latest committed sign-ups',async()=>{
+  const f=await fixture(),event=await createEvent(f);
+  await withEventDiscord({},async state=>{
+    await flushDiscord(f.env);
+    await worker.fetch(f.a.request('/api/hall/events/'+event.id,{action:'join',character_id:101,role:'Tank'}),f.env);
+    state.responses.scheduledEdit=()=>Response.json({retry_after:60},{status:429});
+    await syncOneScheduledEvent(f.env);
+    const throttled=await f.DB.prepare('SELECT * FROM discord_events').first();
+    assert(throttled.signup_revision>throttled.synced_revision);
+    assert(throttled.signup_retry_at>epoch());
+    assert.equal(throttled.signup_lease_until,0);
+    await worker.fetch(f.a.request('/api/hall/events/'+event.id,{action:'leave'}),f.env);
+    await worker.fetch(f.b.request('/api/hall/events/'+event.id,{action:'join',character_id:102,role:'Healer'}),f.env);
+    await f.DB.batch([f.DB.prepare('UPDATE discord_events SET signup_retry_at=0'),f.DB.prepare("DELETE FROM state WHERE key='discord_pause'")]);
+    delete state.responses.scheduledEdit;
+    await syncOneScheduledEvent(f.env);
+    assert.match(state.scheduled[0].description,/Healer\s+1\/1\s+0\s+Bob Example/);
+    assert.doesNotMatch(state.scheduled[0].description,/Alice Example/);
+    const synced=await f.DB.prepare('SELECT * FROM discord_events').first();
+    assert.equal(synced.signup_revision,synced.synced_revision);
+    assert.equal(synced.signup_sync_error,null);
   });
 });
 
@@ -594,6 +657,11 @@ test('channel permission overwrites apply everyone, combined role, and member pr
 test('event announcements stay within Discord length limits while retaining the event link and cancellation state',()=>{
   const event={id:'12345678-1234-1234-1234-123456789012',title:'@everyone '+ '😀*_'.repeat(100),kind:'Other',starts_at:new Date().toISOString(),description:'Long description '.repeat(100),location:'Long location '.repeat(100),capacity:40,duration_minutes:120,status:'open'};
   const signups=Array.from({length:40},(_,i)=>({role:['Tank','Healer','Damage','Roleplay','Social'][i%5],character_name:'😀*_'.repeat(100)})),pending=Array.from({length:20},()=>({display_name:'😀*_'.repeat(100),result:'unmatched'}));
+  const scheduled=scheduledEventDescription(event,signups);
+  assert(scheduled.length<=1000);
+  assert.match(scheduled,/Confirmed: 40\/40 · 0 open/);
+  assert.match(scheduled,/\+8 more/);
+  assert(scheduled.endsWith('Tracker event: '+event.id));
   for(const status of ['open','cancelled']){
     const content=eventAnnouncement({...event,status},signups,pending,'789012345678901235','234567890123456789');assert(content.length<=2000);assert(content.endsWith('Tracker event: '+event.id));assert(content.includes(ORIGIN+'/guild#events'));assert(content.includes('\nDiscord event: https://discord.com/events/'));assert(content.includes('\nCharacter choices and sign-ups: '));assert(!content.includes('\\n'),'formatting uses actual newlines, not literal backslash-n text');assert(!/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/.test(content));assert(!/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/.test(content));if(status==='cancelled')assert(content.includes('CANCELLED'));
   }

@@ -1,7 +1,6 @@
 import {GUILD,RULESET_LABEL,CONFIG} from './config.mjs';
 import {currentUser,requireMember,requireAdmin,requireWrite,bodyJSON,WebError,ORIGIN,LEGACY_ORIGIN,isSiteOrigin,random,digest,stamp} from './auth.mjs';
-import {publishEventPost,eventChannelCheck,deleteEventDiscord,trackerMarker,discordField} from './event-posts.mjs';
-import {eventGuideLines} from './event-templates.mjs';
+import {publishEventPost,eventChannelCheck,deleteEventDiscord,trackerMarker,discordField,scheduledEventDescription,eventSignups} from './event-posts.mjs';
 import {eventInactive,eventTargetStatement,eventCleanupStatement} from './events.mjs';
 import {notificationCrafters,adoptOwnedManualMappings} from './admin-mappings.mjs';
 import {state} from './logic.mjs';
@@ -125,9 +124,9 @@ export async function discordAPI(env,path,method='GET',body){
   if(!response.ok)throw new DeliveryError(response.status===403?'Discord refused the message or event; check DMs and bot permissions':`Discord returned HTTP ${response.status}`,response.status,Math.max(1,Number(data.retry_after)||60));
   return data;
 }
-export function dungeonPayload(event){
-  const plain=value=>String(value||'').replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,100),footer='\nGuild sign-ups: '+ORIGIN+'/guild#events\nTracker event: '+event.id;
-  return {name:plain(event.title),privacy_level:2,entity_type:3,entity_metadata:{location:plain(event.location)||'World of Warcraft Forever · '+RULESET_LABEL},scheduled_start_time:event.starts_at,scheduled_end_time:new Date(Date.parse(event.starts_at)+(event.duration_minutes||120)*60000).toISOString(),description:discordField([event.description,...eventGuideLines(event)].filter(Boolean).join('\n'),1000).slice(0,1000-footer.length)+footer};
+export function dungeonPayload(event,signups=[]){
+  const plain=value=>String(value||'').replace(/[\u0000-\u001f\u007f]/g,' ').trim().slice(0,100);
+  return {name:plain(event.title),privacy_level:2,entity_type:3,entity_metadata:{location:plain(event.location)||'World of Warcraft Forever · '+RULESET_LABEL},scheduled_start_time:event.starts_at,scheduled_end_time:new Date(Date.parse(event.starts_at)+(event.duration_minutes||120)*60000).toISOString(),description:scheduledEventDescription(event,signups)};
 }
 async function craftFallback(env,job,reason){
   if(job.kind!=='dm'||JSON.parse(job.payload).preference!=='crafter')return false;
@@ -172,7 +171,7 @@ async function deliver(env,job){
   }
   if(eventInactive(await env.DB.prepare('SELECT * FROM events WHERE id=?').bind(event.id).first())){await eventCleanupStatement(env,event.id).run();return 'skipped';}
   if(mapping)return 'sent';if(Date.parse(event.starts_at)<Date.now()+10000)return 'skipped';
-  const created=await discordAPI(env,path,'POST',dungeonPayload(event));if(!snowflake(created.id))throw new DeliveryError('Discord did not return an event ID');
+  const created=await discordAPI(env,path,'POST',dungeonPayload(event,await eventSignups(env,event.id)));if(!snowflake(created.id))throw new DeliveryError('Discord did not return an event ID');
   await env.DB.prepare('INSERT OR REPLACE INTO discord_events(event_id,discord_id) VALUES(?,?)').bind(event.id,created.id).run();
   if(eventInactive(await env.DB.prepare('SELECT * FROM events WHERE id=?').bind(event.id).first()))await eventCleanupStatement(env,event.id).run();
   return 'sent';

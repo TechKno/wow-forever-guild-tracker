@@ -10,7 +10,7 @@ import {materialPlan,hydrateOneRecipe} from './materials.mjs';
 import {questView,questProbe} from './quests.mjs';
 import {discordAuth,discordAdmin,discordPreferences,flushDiscord,discordConfig,discordAPI} from './discord.mjs';
 import {crafterView} from './crafters.mjs';
-import {pollOneEventPost,queueEventCleanups} from './event-posts.mjs';
+import {pollOneEventPost,queueEventCleanups,syncOneScheduledEvent} from './event-posts.mjs';
 import {mappingRoute} from './admin-mappings.mjs';
 import {refreshOneDiscordProfile} from './discord-people.mjs';
 import {talentView} from './talents.mjs';
@@ -207,6 +207,7 @@ export default {
       await queueCraftCleanups(env);
       await flushDiscord(env);
       await pollOneEventPost(env);
+      await syncOneScheduledEvent(env);
       await pollOneCraftPost(env);
       await refreshOneDiscordProfile(env);
       await env.DB.prepare('INSERT OR REPLACE INTO state(key,value) VALUES(?,?)')

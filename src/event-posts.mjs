@@ -83,21 +83,119 @@ export async function deleteEventDiscord(env,id){
   return 'sent';
 }
 export const reactionRoles=event=>['Dungeon','Raid'].includes(event.kind)?[{emoji:'🛡️',role:'Tank'},{emoji:'💚',role:'Healer'},{emoji:'⚔️',role:'Damage'}]:event.kind==='Roleplay'?[{emoji:'🎭',role:'Roleplay'},{emoji:'🍻',role:'Social'}]:[{emoji:'🛡️',role:'Tank'},{emoji:'💚',role:'Healer'},{emoji:'⚔️',role:'Damage'},{emoji:'🎭',role:'Roleplay'},{emoji:'🍻',role:'Social'}];
+function signupTable(event, signups, budget){
+  const limits=roleLimits(event),remaining=Math.max(0,event.capacity-signups.length);
+  const rows=reactionRoles(event).map(({role})=>{
+    const names=signups.filter(signup=>signup.role===role).map(signup=>
+      String(signup.character_name||'Character unavailable').replace(/[\x00-\x1f\x7f-\x9f\x60]/g,' ').trim()||'Character unavailable');
+    const limit=limits?.[role]??0;
+    const open=limits?String(Math.max(0,Math.min(remaining,limit-names.length))):'—';
+    return {role,names,shown:[],open,filled:limits?names.length+'/'+limit:String(names.length)};
+  });
+  function render(){
+    const head=limits?'Role     Filled  Open  Characters':'Role     Filled  Characters';
+    const columns=rows.map(({role,names,shown,open,filled})=>{
+      const hidden=names.length-shown.length;
+      const characters=[...shown,...(hidden?['+'+hidden+' more']:[])].join(', ')||'—';
+      return role.padEnd(9)+filled.padEnd(8)+(limits?open.padEnd(6):'')+characters;
+    });
+    return ['Confirmed: '+signups.length+'/'+event.capacity+' · '+remaining+' open','\x60\x60\x60',head,...columns,'\x60\x60\x60'].join('\n');
+  }
+  // Share the name budget across roles, keeping every vacancy and overflow count visible.
+  for(let index=0;index<signups.length;index++){
+    for(const row of rows){
+      if(!row.names[index]||row.shown.length!==index)continue;
+      row.shown.push(row.names[index]);
+      if(render().length>budget)row.shown.pop();
+    }
+  }
+  return render();
+}
+export function scheduledEventDescription(event, signups, announcement){
+  const link=announcement||ORIGIN+'/guild#events';
+  const footer='Guild sign-ups: '+link+'\nTracker event: '+event.id;
+  const table=signupTable(event,signups,1000-footer.length-2);
+  const details=[event.description,...eventGuideLines(event)].filter(Boolean).map(line=>safe(line)).join('\n');
+  const intro=details.slice(0,Math.max(0,1000-table.length-footer.length-4)).replace(/[\uD800-\uDBFF\\]$/,'').trimEnd();
+  return [intro,table,footer].filter(Boolean).join('\n\n');
+}
+export async function eventSignups(env,eventId){
+  const result=await env.DB.prepare(
+    'SELECT json_extract(m.data,\'$.name\') character_name,s.role FROM event_signups s LEFT JOIN verified_membership m ON m.character_id=s.character_id AND m.generation=(SELECT published FROM sync WHERE id=1) WHERE s.event_id=? ORDER BY s.updated_at,s.character_id'
+  ).bind(eventId).all();
+  return result.results;
+}
+export async function syncOneScheduledEvent(env){
+  if(!env.DISCORD_BOT_TOKEN)return;
+  const now=epoch();
+  const pause=await env.DB.prepare("SELECT CAST(json_extract(value,'$.until') AS INTEGER) until FROM state WHERE key='discord_pause'").first();
+  if(pause?.until>now)return;
+  const lease=now+120;
+  const row=await env.DB.prepare(
+    "UPDATE discord_events SET signup_lease_until=? WHERE event_id=("+
+    "SELECT d.event_id FROM discord_events d JOIN events e ON e.id=d.event_id "+
+    "WHERE d.signup_revision<>d.synced_revision AND d.signup_retry_at<=? AND d.signup_lease_until<=? "+
+    "AND e.status='open' AND datetime(e.starts_at,'+'||e.duration_minutes||' minutes')>datetime('now') "+
+    "ORDER BY d.signup_retry_at,e.starts_at,d.event_id LIMIT 1) AND signup_lease_until<=? RETURNING *"
+  ).bind(lease,now,now,now).first();
+  if(!row)return;
+  try{
+    const [event,signups,post,config]=await Promise.all([
+      env.DB.prepare('SELECT * FROM events WHERE id=?').bind(row.event_id).first(),
+      eventSignups(env,row.event_id),
+      env.DB.prepare('SELECT channel_id,message_id FROM discord_event_posts WHERE event_id=?').bind(row.event_id).first(),
+      discordConfig(env)
+    ]);
+    if(eventInactive(event))return;
+    const target=await eventTarget(env,event.id,config,post?.channel_id||config.events_channel_id);
+    if(!snowflake(row.discord_id))throw new DeliveryError('Scheduled event ID is invalid',409);
+    const path='/guilds/'+target.guild_id+'/scheduled-events/'+row.discord_id;
+    const live=await discordAPI(env,path);
+    if(live.id!==row.discord_id||live.guild_id!==target.guild_id||live.creator_id!==target.application_id||!trackerMarker(live.description,event.id))
+      throw new DeliveryError('Scheduled event ownership could not be verified',409);
+    const announcement=post?.channel_id===target.channel_id&&snowflake(post.channel_id)&&snowflake(post.message_id)
+      ? 'https://discord.com/channels/'+target.guild_id+'/'+post.channel_id+'/'+post.message_id : null;
+    const description=scheduledEventDescription(event,signups,announcement);
+    const current=await env.DB.prepare(
+      'SELECT e.* FROM events e JOIN discord_events d ON d.event_id=e.id WHERE e.id=? AND d.discord_id=? AND d.signup_revision=? AND d.signup_lease_until=?'
+    ).bind(event.id,row.discord_id,row.signup_revision,lease).first();
+    if(eventInactive(current))return;
+    if(description!==live.description)await discordAPI(env,path,'PATCH',{description});
+    await env.DB.prepare('UPDATE discord_events SET synced_revision=?,signup_retry_at=0,signup_sync_error=NULL WHERE event_id=? AND discord_id=? AND signup_lease_until=?')
+      .bind(row.signup_revision,event.id,row.discord_id,lease).run();
+  }catch(error){
+    const retry=error.status===429?Math.max(60,error.retry||0):300;
+    await env.DB.prepare('UPDATE discord_events SET signup_retry_at=?,signup_sync_error=? WHERE event_id=? AND discord_id=? AND signup_lease_until=?')
+      .bind(epoch()+retry,error instanceof DeliveryError?error.message:'Scheduled event sign-ups could not be synced',row.event_id,row.discord_id,lease).run();
+    if(error.status===429)await env.DB.prepare(
+      "INSERT INTO state(key,value) VALUES('discord_pause',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value "+
+      "WHERE CAST(json_extract(state.value,'$.until') AS INTEGER)<CAST(json_extract(excluded.value,'$.until') AS INTEGER)"
+    ).bind(JSON.stringify({until:epoch()+retry})).run();
+  }finally{
+    await env.DB.prepare('UPDATE discord_events SET signup_lease_until=0 WHERE event_id=? AND discord_id=? AND signup_lease_until=?')
+      .bind(row.event_id,row.discord_id,lease).run();
+  }
+}
 export function eventAnnouncement(event,signups,pending=[],scheduled=null,guild=''){
-  const limits=roleLimits(event),roles=reactionRoles(event),cancelled=event.status!=='open';
-  const lines=[`**${cancelled?'CANCELLED · ':''}${safe(event.title)}**`,`${safe(event.kind)} · <t:${Math.floor(Date.parse(event.starts_at)/1000)}:F> · ${event.duration_minutes||120} minutes`,event.location?'Meet at '+safe(event.location):'',event.description?safe(event.description).slice(0,120):'',...eventGuideLines(event).map(line=>discordField(line,260)),`**Confirmed places: ${signups.length}/${event.capacity}**`];
-  for(const {emoji,role}of roles){const matches=signups.filter(s=>s.role===role);lines.push(`${emoji} **${role}: ${matches.length}${limits?.[role]!==undefined?'/'+limits[role]:''}** — ${matches.length?matches.slice(0,6).map(s=>safe(s.character_name)).join(', ')+(matches.length>6?' +'+(matches.length-6)+' more':''):'open'}`);}
-  if(pending.length)lines.push('**Awaiting confirmation:** '+pending.slice(0,5).map(s=>`${safe(s.display_name)} (${safe(s.result)})`).join(', ')+(pending.length>5?` +${pending.length-5} more`:''));
+  const roles=reactionRoles(event),cancelled=event.status!=='open';
+  const heading=[`**${cancelled?'CANCELLED · ':''}${safe(event.title)}**`,`${safe(event.kind)} · <t:${Math.floor(Date.parse(event.starts_at)/1000)}:F> · ${event.duration_minutes||120} minutes`,event.location?'Meet at '+safe(event.location):''].filter(Boolean).join('\n');
+  const lines=[];
+  if(pending.length)lines.push('**Awaiting confirmation:** '+pending.slice(0,3).map(s=>`${discordField(s.display_name,32)} (${discordField(s.result,24)})`).join(', ')+(pending.length>3?` +${pending.length-3} more`:''));
   if(!cancelled)lines.push('',`React ${roles.map(r=>r.emoji+' '+r.role).join(' / ')} to claim a party role. Keep one role reaction. Remove it to withdraw a Discord signup.`, 'Match your character with one-time '+CONFIG.discord.botName+' authorisation or ask a guild administrator to assign it. Your existing WoW ↔ Discord connection stays in place. Unmatched reactions wait for confirmation.', 'Website choices stay in place until you change your reaction. Reaction checks run each minute; several events may take longer.');
   const footer=[scheduled?`Discord event: https://discord.com/events/${guild}/${scheduled}`:'',`Character choices and sign-ups: ${ORIGIN}/guild#events`,`Tracker event: ${event.id}`].filter(Boolean).join('\n');
-  return lines.filter(Boolean).join('\n').slice(0,2000-footer.length-1).replace(/[\uD800-\uDBFF]$/,'')+'\n'+footer;
+  const tail=[...lines.filter(Boolean),footer].join('\n');
+  const budget=2000-heading.length-tail.length-4;
+  const details=[event.description,...eventGuideLines(event)].filter(Boolean).map(line=>discordField(line,150)).join('\n');
+  const table=signupTable(event,signups,budget-Math.min(details.length,360));
+  const intro=details.slice(0,Math.max(0,budget-table.length-2)).replace(/[\uD800-\uDBFF\\]$/,'').trimEnd();
+  return [heading,table,intro,tail].filter(Boolean).join('\n\n');
 }
 async function announcementData(env,event){
   const [signups,pending,scheduled]=await Promise.all([
-    env.DB.prepare(`SELECT s.*,json_extract(m.data,'$.name') character_name FROM event_signups s LEFT JOIN verified_membership m ON m.character_id=s.character_id AND m.generation=(SELECT published FROM sync WHERE id=1) WHERE s.event_id=? ORDER BY s.updated_at`).bind(event.id).all(),
+    eventSignups(env,event.id),
     env.DB.prepare("SELECT display_name,result FROM discord_event_reactions WHERE event_id=? AND signature<>'' AND result NOT IN ('confirmed','removed') ORDER BY first_seen LIMIT 20").bind(event.id).all(),
     env.DB.prepare('SELECT discord_id FROM discord_events WHERE event_id=?').bind(event.id).first()
-  ]);const config=await discordConfig(env);return eventAnnouncement(event,signups.results,pending.results,scheduled?.discord_id,config.guild_id);
+  ]);const config=await discordConfig(env);return eventAnnouncement(event,signups,pending.results,scheduled?.discord_id,config.guild_id);
 }
 async function seedReactions(env,event,post){
   if(eventInactive(event))return;

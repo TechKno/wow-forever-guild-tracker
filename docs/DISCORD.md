@@ -11,6 +11,8 @@ The dashboard works without Discord. Each guild operator supplies their own appl
 
 Craft requests can target observed crafters. The bot uses eligible opted-in DMs, with a craft-channel fallback when no crafter was chosen or delivery is unavailable. The requester and verified capable crafters may confirm channel completion; bot-owned posts are queued for removal on completion/cancellation. Members choose their event roles; Discord Interested responses are separate from confirmed party signups.
 
+Website sign-ups and confirmed role reactions update the Events channel announcement and the bot’s scheduled Discord event. Both show confirmed character names, total vacancies, and vacancies per role when the host sets role limits. Large parties may show an overflow count with a link to the sign-ups. Discord updates run on the scheduler and can take longer when several events are queued.
+
 Bot work is processed in bounded scheduled batches. Permission errors and provider rate limits can delay posting, reactions and cleanup. Discord may refuse DMs even after an opt-in. Use a private test channel and fictional requests while testing your installation.
 
 See [Discord OAuth2](https://docs.discord.com/developers/topics/oauth2) and [permission documentation](https://docs.discord.com/developers/topics/permissions).
