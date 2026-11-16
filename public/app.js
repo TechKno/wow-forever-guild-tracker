@@ -37,6 +37,19 @@ const classID=m=>Number.isInteger(m.class_id)?m.class_id:0;
 const classLabel=m=>`<span class="class-label c${classID(m)}">${escapeHTML(m.class)}</span>`;
 const memberButton=m=>`<button class="member-name" data-member="${escapeHTML(m.slug)}">${escapeHTML(m.name)}</button>${membershipNote(m)}`;
 const observed=m=>m.professions_status==='verified';
+const professionHeadings={
+  Primary:'Primary professions',
+  Secondary:'Secondary professions',
+  Unknown:'Profession type unreported'
+};
+const professionKind=p=>p.kind==='Primary'||p.kind==='Secondary'?p.kind:'Unknown';
+
+function professionSections(heading,renderGroup) {
+  return Object.entries(professionHeadings).map(([kind,title])=>{
+    const content=renderGroup(kind);
+    return content?`<section class="profession-section"><${heading}>${title}</${heading}>${content}</section>`:'';
+  }).join('');
+}
 const roleChoices=['Tank','Healer','Damage'];
 function rolePreference(member){
   const roles=roleChoices.filter(role=>Array.isArray(member?.preferred_roles)&&member.preferred_roles.includes(role));
@@ -258,17 +271,27 @@ function updateSummary() {
   renderStatus();
 }
 function renderCompositions() {
-  const counts=new Map(),professionCounts=new Map();
+  const counts=new Map(),professionCounts={Primary:new Map(),Secondary:new Map(),Unknown:new Map()};
   members.forEach(m=>counts.set(m.class,(counts.get(m.class)||0)+1));
   const profiles=members.filter(m=>m.professions_at);
   for(const member of profiles){
-    const names=new Set((member.professions||[]).map(p=>typeof p.name==='string'?p.name.trim():'').filter(Boolean));
-    for(const name of names)professionCounts.set(name,(professionCounts.get(name)||0)+1);
+    const seen={Primary:new Set(),Secondary:new Set(),Unknown:new Set()};
+    for(const profession of member.professions||[]){
+      const name=typeof profession.name==='string'?profession.name.trim():'';
+      const kind=professionKind(profession);
+      if(!name||seen[kind].has(name))continue;
+      seen[kind].add(name);
+      const countsByName=professionCounts[kind];
+      countsByName.set(name,(countsByName.get(name)||0)+1);
+    }
   }
   const rows=(values,empty,label)=>values.size?[...values].sort((a,b)=>b[1]-a[1]).map(([name,count])=>`<div class="composition-row"><div><span>${escapeHTML(name)}</span><span>${count}</span></div><progress value="${count}" max="${members.length}" aria-label="${escapeHTML(name)}: ${count} ${count===1?label.replace(/s$/,''):label}"></progress></div>`).join(''):`<p class="muted">${empty}</p>`;
   $('composition').innerHTML=rows(counts,'Class distribution appears with your roster.','members');
-  $('profession-composition').innerHTML=rows(professionCounts,profiles.length?'No professions were returned in the saved observations.':'Profession distribution appears as character profiles are imported.','characters');
-  $('profession-composition-note').textContent=`${profiles.length} of ${members.length} character profiles have profession observations. Counts include secondary skills and each character once per profession.${profiles.some(m=>!observed(m))?' Previous observations included.':''} Unavailable profiles may have additional professions.`;
+  $('profession-composition').innerHTML=Object.values(professionCounts).some(group=>group.size)
+    ?professionSections('h4',kind=>kind==='Unknown'&&!professionCounts.Unknown.size?'':
+      `<div class="composition-list">${rows(professionCounts[kind],'No professions in this group were reported.','characters')}</div>`)
+    :`<p class="muted">${profiles.length?'No professions were returned in the saved observations.':'Profession distribution appears as character profiles are imported.'}</p>`;
+  $('profession-composition-note').textContent=`${profiles.length} of ${members.length} character profiles have profession observations. Each character is counted once per profession.${profiles.some(m=>!observed(m))?' Previous observations included.':''} Unavailable profiles may have additional professions.`;
   const declared=members.map(rolePreference).filter(value=>value.primary_role),roleCounts=new Map((members.length?roleChoices:[]).map(role=>[role,declared.filter(value=>value.primary_role===role).length]));
   $('role-composition').innerHTML=rows(roleCounts,'Members can share their preferred roles in Members &amp; alts.','characters');
   $('role-composition-note').textContent=`${declared.length} of ${members.length} characters have chosen roles. Counts use primary choices only, include alts, and do not show live availability. Additional roles appear on each character.`;
@@ -344,14 +367,38 @@ document.addEventListener('click',event=>{
 });
 
 function renderProfessions() {
-  const query=$('profession-search').value.toLowerCase().trim(),groups=new Map();
+  const query=$('profession-search').value.toLowerCase().trim();
+  const groups={Primary:new Map(),Secondary:new Map(),Unknown:new Map()};
   for(const m of members) for(const p of m.professions||[]) {
     if(query&&!`${p.name} ${m.name}`.toLowerCase().includes(query)) continue;
-    if(!groups.has(p.name)) groups.set(p.name,[]);
-    groups.get(p.name).push({member:m,profession:p});
+    const group=groups[professionKind(p)];
+    if(!group.has(p.name)) group.set(p.name,[]);
+    group.get(p.name).push({member:m,profession:p});
   }
-  $('profession-grid').innerHTML=[...groups].sort((a,b)=>a[0].localeCompare(b[0])).map(([name,list])=>`<article class="panel profession-card"><span class="eyebrow gold">${escapeHTML(list[0].profession.kind)} PROFESSION</span><h3>${escapeHTML(name)} <span class="subtle">· ${new Set(list.map(r=>r.member.id)).size} members</span></h3>${list.sort((a,b)=>(b.profession.skill??-1)-(a.profession.skill??-1)).map(({member:m,profession:p})=>`<div class="profession-person"><div>${memberButton(m)}<br><small>${escapeHTML(p.tier||p.kind)}${observed(m)?'':' · previous observation'}</small></div><span>${p.skill??'?'} / ${p.max_skill??'?'}</span>${p.skill!=null&&p.max_skill>0?`<progress value="${p.skill}" max="${p.max_skill}" aria-label="${escapeHTML(m.name)}: skill ${p.skill} of ${p.max_skill}"></progress>`:''}</div>`).join('')}</article>`).join('');
-  $('profession-empty').hidden=groups.size>0;
+  const sections=professionSections('h3',kind=>{
+    const cards=[...groups[kind]].sort((a,b)=>a[0].localeCompare(b[0])).map(([name,list])=>{
+      const characters=list.sort((a,b)=>(b.profession.skill??-1)-(a.profession.skill??-1)).map(({member:m,profession:p})=>{
+        const tier=[p.tier,observed(m)?'':'Previous observation'].filter(Boolean).join(' · ');
+        const skill=escapeHTML(p.skill??'?'),max=escapeHTML(p.max_skill??'?');
+        return `<div class="profession-person"><div>${memberButton(m)}${tier?`<br><small>${escapeHTML(tier)}</small>`:''}</div><span>${skill} / ${max}</span>${p.skill!=null&&p.max_skill>0?`<progress value="${skill}" max="${max}" aria-label="${escapeHTML(m.name)}: skill ${skill} of ${max}"></progress>`:''}</div>`;
+      }).join('');
+      const count=new Set(list.map(r=>r.member.id)).size;
+      return `<article class="panel profession-card"><h4>${escapeHTML(name)} <span class="subtle">· ${count} ${count===1?'character':'characters'}</span></h4>${characters}</article>`;
+    }).join('');
+    return cards?`<div class="profession-grid">${cards}</div>`:'';
+  });
+  $('profession-grid').innerHTML=sections;
+  $('profession-empty').hidden=Boolean(sections);
+  $('profession-empty-description').textContent=query?'Try another profession or character name.':'Profession skill levels will appear as character profiles are imported.';
+}
+function characterProfessions(member) {
+  if(!member.professions_at)return '<p>Profession information is not yet available.</p>';
+  const groups=professionSections('h4',kind=>(member.professions||[]).filter(p=>professionKind(p)===kind).map(p=>{
+    const recipes=p.recipes||[];
+    const coverage=p.recipe_status==='observed'?`${recipes.length} recipes returned`:'Recipe coverage not exposed';
+    return `<div class="detail-group"><div class="detail-row"><strong>${escapeHTML(p.name)}</strong><span>${escapeHTML(p.skill??'?')} / ${escapeHTML(p.max_skill??'?')}</span></div><p>${p.tier?escapeHTML(p.tier)+' · ':''}${coverage}</p><div class="detail-recipes">${recipes.map(r=>`<span class="tag">${escapeHTML(r.name)}</span>`).join('')}</div></div>`;
+  }).join(''));
+  return groups||'<p>No professions were returned in the last observed response.</p>';
 }
 function renderRecipes() {
   const query=$('recipe-search').value.toLowerCase().trim(),profession=$('recipe-profession').value;
@@ -386,7 +433,7 @@ function openMember(slug,refresh=false) {
   const focusable=inside?[...content.querySelectorAll('a[href],button,input,select,textarea,summary,[tabindex]')]:[];
   const focusIndex=inside?focusable.indexOf(focused):-1,focusId=inside?focused.id:'';
   openMemberSlug=slug;
-  $('member-content').innerHTML=`<div class="eyebrow gold">${escapeHTML(SITE_BRAND.guildName.toUpperCase())} · ${escapeHTML(SITE_BRAND.regionRuleset.toUpperCase())}</div><h2 class="detail-title">${escapeHTML(m.name)}</h2><p>${classLabel(m)} · Level ${escapeHTML(m.level??'?')} · ${escapeHTML(m.race)}</p><section class="character-talents" aria-label="Character talent trees"><div class="detail-group"><h3>Talent trees</h3>${m.talents?.length?m.talents.map(t=>`<div class="detail-row"><span>${escapeHTML(t.name)}</span><span>${escapeHTML(t.points??'?')} points</span></div>`).join(''):'<p>No active talent points were returned. No specialisation or combat role has been inferred.</p>'}<p>Observed: ${escapeHTML(date(m.talents_at))}${m.talents_status==='stale'?' · refresh unavailable':''}</p></div></section><div class="detail-group character-role-summary"><h3>Preferred combat roles</h3>${roleBadges(m)}<p>Chosen by this character’s owner. Preferences can be changed in Manage My Account and do not change event sign-ups.</p></div>${refreshDetails(m)}<div class="detail-group character-professions"><h3>Professions &amp; learned recipes</h3>${m.professions_at?(m.professions||[]).map(p=>`<div class="detail-group"><div class="detail-row"><strong>${escapeHTML(p.name)}</strong><span>${p.skill??'?'} / ${p.max_skill??'?'}</span></div><p>${escapeHTML(p.kind)}${p.tier?' · '+escapeHTML(p.tier):''} · ${p.recipe_status==='observed'?`${p.recipes.length} recipes returned`:'Recipe coverage not exposed'}</p><div class="detail-recipes">${(p.recipes||[]).map(r=>`<span class="tag">${escapeHTML(r.name)}</span>`).join('')}</div></div>`).join('')||'<p>No professions were returned in the last observed response.</p>':'<p>Profession information is not yet available.</p>'}<p>Observed: ${escapeHTML(date(m.professions_at))}${m.professions_status==='stale'?' · showing a previous observation':''}</p></div><div class="detail-group character-data-status"><h3>Data status</h3>${['profile','professions','talents'].map(key=>`<div class="detail-row"><span>${escapeHTML(key)}</span><span class="badge ${escapeHTML(m[key+'_status']||'unverified')}">${escapeHTML(m[key+'_status']||'not yet observed')}</span></div>${m[key+'_error']?`<p>${escapeHTML(m[key+'_error'])}</p>`:''}`).join('')}</div>`;
+  $('member-content').innerHTML=`<div class="eyebrow gold">${escapeHTML(SITE_BRAND.guildName.toUpperCase())} · ${escapeHTML(SITE_BRAND.regionRuleset.toUpperCase())}</div><h2 class="detail-title">${escapeHTML(m.name)}</h2><p>${classLabel(m)} · Level ${escapeHTML(m.level??'?')} · ${escapeHTML(m.race)}</p><section class="character-talents" aria-label="Character talent trees"><div class="detail-group"><h3>Talent trees</h3>${m.talents?.length?m.talents.map(t=>`<div class="detail-row"><span>${escapeHTML(t.name)}</span><span>${escapeHTML(t.points??'?')} points</span></div>`).join(''):'<p>No active talent points were returned. No specialisation or combat role has been inferred.</p>'}<p>Observed: ${escapeHTML(date(m.talents_at))}${m.talents_status==='stale'?' · refresh unavailable':''}</p></div></section><div class="detail-group character-role-summary"><h3>Preferred combat roles</h3>${roleBadges(m)}<p>Chosen by this character’s owner. Preferences can be changed in Manage My Account and do not change event sign-ups.</p></div>${refreshDetails(m)}<div class="detail-group character-professions"><h3>Professions &amp; learned recipes</h3>${characterProfessions(m)}<p>Observed: ${escapeHTML(date(m.professions_at))}${m.professions_status==='stale'?' · showing a previous observation':''}</p></div><div class="detail-group character-data-status"><h3>Data status</h3>${['profile','professions','talents'].map(key=>`<div class="detail-row"><span>${escapeHTML(key)}</span><span class="badge ${escapeHTML(m[key+'_status']||'unverified')}">${escapeHTML(m[key+'_status']||'not yet observed')}</span></div>${m[key+'_error']?`<p>${escapeHTML(m[key+'_error'])}</p>`:''}`).join('')}</div>`;
   const armoryHost=document.createElement?.('section');if(armoryHost){armoryHost.className='character-armory';content.insertBefore?.(armoryHost,content.querySelector?.('.character-talents'));window.GuildArmory?.mount(armoryHost,m);}
   window.GuildCharacterCard?.mount(content,m);
   const talentHost=content.querySelector?.('.character-talents');if(talentHost)window.GuildTalents?.render(m,talentHost);

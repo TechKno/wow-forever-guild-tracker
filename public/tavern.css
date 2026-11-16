@@ -33,3 +33,9 @@ main.legal{max-width:820px;margin:0 auto;padding:44px 24px}.legal p,.legal li{co
 .composition-panels{display:grid;gap:22px;min-width:0}
 
 @media(max-width:650px){.roster-panel .filters select{flex:1 1 calc(50% - 4px)}.roster-panel .filters #sort{flex-basis:100%}}
+
+.profession-section + .profession-section{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}
+.profession-section > h4{margin:0 0 8px;color:var(--text);font-size:17px}
+#profession-grid .profession-section{margin-top:22px}
+.profession-card h4{margin:0 0 12px;font-size:20px;overflow-wrap:anywhere}
+.character-professions .profession-section > .detail-group{margin-top:12px;padding-top:12px}

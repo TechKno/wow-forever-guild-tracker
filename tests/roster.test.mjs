@@ -11,11 +11,19 @@ function roster(fixture){
   const element=id=>{if(!elements.has(id))elements.set(id,{id,value:'',hidden:false,innerHTML:'',textContent:'',classList:{toggle(){},add(){},remove(){}},addEventListener(){},setAttribute(){}});return elements.get(id);};
   element('sort').value='level';
   element('role-filter').value=fixture.role||'';element('class-filter').value=fixture.class||'';element('roster-search').value=fixture.search||'';
+  element('profession-search').value=fixture.professionSearch||'';
   const context=vm.createContext({fixture,document:{getElementById:element,querySelector:()=>element('dialog-close'),querySelectorAll:()=>[],addEventListener(){}},window:{addEventListener(){}},location:{hash:''},history:{replaceState(){}}});
   vm.runInContext(source,context);
-  vm.runInContext("members=fixture.members;rosterLinks=fixture.links||[];groupedRoster=fixture.grouped!==false;status={sync:{published:'current'}};for(const id of fixture.expanded||[])expandedPlayers.add('player:'+id);renderRoster();renderCompositions();",context);
+  vm.runInContext("members=fixture.members;rosterLinks=fixture.links||[];groupedRoster=fixture.grouped!==false;status={sync:{published:'current'}};for(const id of fixture.expanded||[])expandedPlayers.add('player:'+id);renderRoster();renderCompositions();renderProfessions();",context);
   const html=element('roster-body').innerHTML;
-  return {names:[...html.matchAll(/class="member-name"[^>]*>([^<]+)<\/button>/g)].map(match=>match[1]),note:element('grouping-note').textContent,html,count:element('roster-count').textContent,empty:element('roster-empty').innerHTML,details:vm.runInContext('refreshDetails(fixture.members[0])',context),professionComposition:element('profession-composition').innerHTML,professionCoverage:element('profession-composition-note').textContent};
+  const professionViews={
+    composition:element('profession-composition').innerHTML,
+    directory:element('profession-grid').innerHTML,
+    character:vm.runInContext('characterProfessions(fixture.members[0])',context),
+    empty:!element('profession-empty').hidden,
+    emptyDescription:element('profession-empty-description').textContent
+  };
+  return {names:[...html.matchAll(/class="member-name"[^>]*>([^<]+)<\/button>/g)].map(match=>match[1]),note:element('grouping-note').textContent,html,count:element('roster-count').textContent,empty:element('roster-empty').innerHTML,details:vm.runInContext('refreshDetails(fixture.members[0])',context),professionViews,professionCoverage:element('profession-composition-note').textContent};
 }
 
 test('role filters include primary and additional preferences, work with search/class, and exclude undeclared roles',()=>{
@@ -49,25 +57,51 @@ test('a role-matching alt expands under its main without showing unrelated alts 
   assert.deepEqual(roster({members,links,role:'Tank'}).names,['Tank Main']);
 });
 
-test('profession composition counts characters once per skill, includes secondary and previous observations, and identifies missing data',()=>{
+test('profession composition groups skills and counts characters once per profession, including previous observations',()=>{
   const members=[
     {...character(1,'Main',20),professions_at:'2026-11-09T07:00:00Z',professions_status:'verified',professions:[{name:'Mining',kind:'Primary'},{name:'Mining',kind:'Primary',tier:'Another tier'},{name:'Cooking',kind:'Secondary'}]},
     {...character(2,'Alt',12),professions_at:'2026-11-08T07:00:00Z',professions_status:'stale',professions:[{name:'Mining',kind:'Primary'}]},
     {...character(3,'Unavailable',5),professions_status:'unavailable',professions:[]}
   ];
   const result=roster({members,links:[{character_id:1,user_id:'owner',main_character_id:1},{character_id:2,user_id:'owner',main_character_id:1}]});
-  assert.match(result.professionComposition,/Mining: 2 characters/);
-  assert.match(result.professionComposition,/Cooking: 1 character/);
-  assert.match(result.professionComposition,/value="2" max="3"/);
+  const [primary,secondary]=result.professionViews.composition.split('<h4>Secondary professions</h4>');
+  assert.match(primary,/<h4>Primary professions<\/h4>/);
+  assert.match(primary,/Mining: 2 characters/);
+  assert.doesNotMatch(primary,/Cooking/);
+  assert.match(secondary,/Cooking: 1 character/);
+  assert.doesNotMatch(secondary,/Mining/);
+  assert.match(result.professionViews.composition,/value="2" max="3"/);
   assert.match(result.professionCoverage,/2 of 3 character profiles/);
   assert.match(result.professionCoverage,/Previous observations included/);
   assert.match(result.professionCoverage,/Unavailable profiles may have additional professions/);
   const missing=roster({members:[members[2]]});
-  assert.match(missing.professionComposition,/appears as character profiles are imported/);
-  assert.doesNotMatch(missing.professionComposition,/<progress/);
+  assert.match(missing.professionViews.composition,/appears as character profiles are imported/);
+  assert.doesNotMatch(missing.professionViews.composition,/<progress/);
   const empty=roster({members:[{...members[0],professions:[]}]});
-  assert.match(empty.professionComposition,/No professions were returned/);
-  assert.doesNotMatch(empty.professionComposition,/Mining/);
+  assert.match(empty.professionViews.composition,/No professions were returned/);
+  assert.doesNotMatch(empty.professionViews.composition,/Mining/);
+});
+
+test('the directory and character card separate reported profession types and search across both',()=>{
+  const members=[{...character(1,'Rowan',20),professions_at:'2026-11-09T07:00:00Z',professions_status:'verified',professions:[
+    {name:'Cooking',kind:'Secondary',skill:20,recipe_status:'observed',recipes:[{name:'Spiced Bread'}]},
+    {name:'Mining',kind:'Primary'},
+    {name:'Older Skill'}
+  ]}];
+  const result=roster({members});
+  for(const view of ['composition','directory','character']){
+    assert.match(result.professionViews[view],/Primary professions[\s\S]+Mining[\s\S]+Secondary professions[\s\S]+Cooking[\s\S]+Profession type unreported[\s\S]+Older Skill/);
+  }
+  assert.match(result.professionViews.character,/Spiced Bread/);
+  assert.match(roster({members,professionSearch:'rowan'}).professionViews.directory,/Mining[\s\S]+Cooking/);
+  const cooking=roster({members,professionSearch:'cooking'}).professionViews;
+  assert.match(cooking.directory,/Secondary professions[\s\S]+Cooking/);
+  assert.doesNotMatch(cooking.directory,/Primary professions|Mining/);
+  assert.equal(cooking.empty,false);
+  const absent=roster({members,professionSearch:'skinning'}).professionViews;
+  assert.equal(absent.directory,'');
+  assert.equal(absent.empty,true);
+  assert.match(absent.emptyDescription,/Try another profession/);
 });
 
 test('highest-level groups sort by their displayed main rather than a higher-level alt',()=>{
