@@ -6,11 +6,16 @@ import {runInNewContext} from 'node:vm';
 const script = readFileSync(new URL('../public/tools.js', import.meta.url), 'utf8');
 
 function calculator() {
+  const rows = new Map(['orange', 'yellow', 'green', 'grey', 'red'].map(band => {
+    const result = {};
+    return [band, {dataset: {skinningBand: band}, querySelector: () => result}];
+  }));
   const elements = {
     'skinning-mob-level': {max: '63'},
     'skinning-current-skill': {},
     'skinning-required': {},
-    'skinning-highest': {}
+    'skinning-highest': {},
+    'skinning-ranges': {querySelectorAll: () => rows.values()}
   };
   for (const input of [elements['skinning-mob-level'], elements['skinning-current-skill']]) {
     Object.assign(input, {
@@ -22,6 +27,11 @@ function calculator() {
   }
   runInNewContext(script, {document: {getElementById: id => elements[id]}});
   return {
+    ranges() {
+      if (elements['skinning-ranges'].hidden) return null;
+      return Object.fromEntries([...rows].filter(([, row]) => !row.hidden)
+        .map(([band, row]) => [band, row.querySelector('dd').textContent]));
+    },
     enter(kind, value, {valid = true, badInput = false} = {}) {
       const input = elements[kind === 'level' ? 'skinning-mob-level' : 'skinning-current-skill'];
       const output = elements[kind === 'level' ? 'skinning-required' : 'skinning-highest'];
@@ -56,4 +66,43 @@ test('clearing or invalidating an input clears the previous result', () => {
   assert.deepEqual(enter('skill', 53.5, {valid: false}), ['—', 'true']);
   assert.deepEqual(enter('skill', '', {valid: false, badInput: true}), ['—', 'true']);
   assert.deepEqual(enter('skill', ''), ['—', undefined]);
+});
+
+test('skill-up colour ranges cover skinnable mobs and mark the levels still locked', () => {
+  const {enter, ranges} = calculator();
+  assert.equal(ranges(), null);
+  enter('skill', 53);
+  assert.deepEqual(ranges(), {
+    orange: 'Levels 13–15',
+    yellow: 'Levels 11–12',
+    green: 'Levels 1–10',
+    red: 'Levels 16–63'
+  });
+  enter('skill', 105);
+  assert.deepEqual(ranges(), {
+    orange: 'Levels 19–21',
+    yellow: 'Levels 16–18',
+    green: 'Levels 11–15',
+    grey: 'Levels 1–10',
+    red: 'Levels 22–63'
+  });
+  enter('skill', 315);
+  assert.equal(ranges().red, undefined);
+  enter('skill', 0);
+  assert.equal(ranges(), null);
+  enter('skill', 53);
+  enter('skill', '', {valid: false, badInput: true});
+  assert.equal(ranges(), null);
+});
+
+test('the exact 25, 50 and 100 point gaps move a mob into the next colour', () => {
+  const {enter, ranges} = calculator();
+  for (const [skill, band] of [[25, 'orange'], [26, 'yellow'], [51, 'green'], [101, 'grey']]) {
+    enter('skill', skill);
+    assert.match(ranges()[band], /^Levels 1–/, 'Skinning skill '+skill);
+  }
+  enter('skill', 10);
+  assert.equal(ranges().red, 'Levels 12–63');
+  enter('skill', 34);
+  assert.equal(ranges().orange, 'Levels 11–13');
 });

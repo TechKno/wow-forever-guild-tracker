@@ -60,3 +60,46 @@
 .skinning-note {
   margin-top: 16px;
 }
+
+.skinning-ranges {
+  margin-top: 20px;
+}
+
+.skinning-ranges h3 {
+  margin: 0 0 8px;
+}
+
+.skinning-ranges dl {
+  margin: 0;
+}
+
+.skinning-ranges dl > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.skinning-ranges dt::before {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-inline-end: 7px;
+  border-radius: 50%;
+  background: var(--band-colour);
+  content: "";
+}
+
+.skinning-ranges dd {
+  margin: 0;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+[data-skinning-band="orange"] { --band-colour: #d57c38; }
+[data-skinning-band="yellow"] { --band-colour: #d7a62f; }
+[data-skinning-band="green"] { --band-colour: #68915b; }
+[data-skinning-band="grey"] { --band-colour: #898989; }
+[data-skinning-band="red"] { --band-colour: #c76558; }
