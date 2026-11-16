@@ -41,6 +41,7 @@ Screenshots are captured from the real interface using the isolated [demo previe
 - A [private guild gallery](docs/GALLERY.md) with member screenshot uploads, captions, full-size viewing and reversible owner/admin moderation.
 - Manage My Account for owned characters, main/alt grouping, combat roles and Discord preferences.
 - A centred guild hierarchy sorted by in-game rank, with editable suggested rank names.
+- A Tools page with a two-way Skinning calculator for the standard mob level and skill thresholds.
 - Tabbed character cards with a compact armory, protected item icons and character artwork, talents, professions and data details; unavailable sections stay unknown.
 - Roster-observed departures revoke supplemental membership proof and free future event places; verified roster returns restore eligibility.
 - Roster with class/profession composition, main/alt grouping, sorting and filters for primary **or additional** combat roles.

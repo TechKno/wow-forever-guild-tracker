@@ -133,6 +133,7 @@ const ROUTES={
   wishlists:{panel:'hall',pane:'learn',title:'The recipe wishlist',label:'Recipe wishlists',eyebrow:'KEEP AN EYE OUT',description:'Let the guild know which recipes you would love to learn.'},
   members:{panel:'hall',pane:'people',title:'The people behind the characters',label:'Members & alts',eyebrow:'ONE PLAYER, MANY STORIES',description:`Bring your mains and alts together, share a story, and connect with ${SITE_BRAND.botName}.`},
   professions:{panel:'professions',title:'Guild professions',label:'Professions',eyebrow:'SKILLED HANDS',description:'Find the guild member who knows just how to make it.'},
+  tools:{panel:'tools',title:'Tools',label:'Tools',eyebrow:'',description:''},
   recipes:{panel:'recipes',title:'The guild recipe book',label:'Recipe book',eyebrow:'A SHARED BOOK OF KNOW-HOW',description:'Explore learned recipes and the guild crafters who have been observed knowing them.'},
   history:{panel:'history',title:'The guild chronicle',label:'Guild chronicle',eyebrow:'EVERY ADVENTURE LEAVES A MARK',description:'Levels gained, skills improved, and new recipes discovered along the way.'},
   adventures:{panel:'adventures',title:'The quest board',label:'Quest board',eyebrow:'LEAVE NO ADVENTURER BEHIND',description:'Compare your party’s returned quest logs before heading out together.'},

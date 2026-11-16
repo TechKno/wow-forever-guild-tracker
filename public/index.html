@@ -1,9 +1,10 @@
 <!doctype html>
 <html lang="en-GB">
-<head><meta charset="utf-8"><script src="/theme.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111b20"><title>Example Guild · Guild Ledger</title><meta name="description" content="A welcoming community for adventures, crafting and good company."><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/hall.css"><link rel="stylesheet" href="/materials.css"><link rel="stylesheet" href="/players.css"><link rel="stylesheet" href="/talents.css"><script src="/talents.js" defer></script><script src="/event-templates.js" defer></script><script src="/gallery.js" defer></script><script src="/account.js" defer></script><script src="/armory.js" defer></script><script src="/hierarchy.js" defer></script><script src="/admin-overview.js" defer></script><script src="/character-card.js" defer></script><script src="/app.js" defer></script><script src="/hall.js" defer></script><script src="/adventures.js" defer></script><link rel="stylesheet" href="/adventures.css"><link rel="icon" type="image/svg+xml" href="/assets/guild-logo.svg"><link rel="stylesheet" href="/tavern.css"><link rel="stylesheet" href="/tavern-community.css"><link rel="stylesheet" href="/brand.css"><link rel="stylesheet" href="/event-templates.css"><link rel="stylesheet" href="/gallery.css"><link rel="stylesheet" href="/account.css"><link rel="stylesheet" href="/armory.css"><link rel="stylesheet" href="/hierarchy.css"><link rel="stylesheet" href="/admin-overview.css"><link rel="stylesheet" href="/character-card.css"><link rel="stylesheet" href="/theme.css"></head>
+<head><meta charset="utf-8"><script src="/theme.js"></script><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111b20"><title>Example Guild · Guild Ledger</title><meta name="description" content="A welcoming community for adventures, crafting and good company."><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/hall.css"><link rel="stylesheet" href="/materials.css"><link rel="stylesheet" href="/players.css"><link rel="stylesheet" href="/talents.css"><script src="/talents.js" defer></script><script src="/event-templates.js" defer></script><script src="/gallery.js" defer></script><script src="/account.js" defer></script><script src="/armory.js" defer></script><script src="/hierarchy.js" defer></script><script src="/admin-overview.js" defer></script><script src="/character-card.js" defer></script><script src="/app.js" defer></script><script src="/tools.js" defer></script><script src="/hall.js" defer></script><script src="/adventures.js" defer></script><link rel="stylesheet" href="/adventures.css"><link rel="icon" type="image/svg+xml" href="/assets/guild-logo.svg"><link rel="stylesheet" href="/tavern.css"><link rel="stylesheet" href="/tools.css"><link rel="stylesheet" href="/tavern-community.css"><link rel="stylesheet" href="/brand.css"><link rel="stylesheet" href="/event-templates.css"><link rel="stylesheet" href="/gallery.css"><link rel="stylesheet" href="/account.css"><link rel="stylesheet" href="/armory.css"><link rel="stylesheet" href="/hierarchy.css"><link rel="stylesheet" href="/admin-overview.css"><link rel="stylesheet" href="/character-card.css"><link rel="stylesheet" href="/theme.css"></head>
 <body class="guild-page"><svg class="icon-library" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
 <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 10 9-7 9 7M5 9v12h14V9M9 21v-7h6v7"/></symbol>
 <symbol id="i-gallery" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8" cy="8" r="2"/><path d="m3 18 5-6 4 4 4-6 5 8"/></symbol>
+<symbol id="i-calculator" viewBox="0 0 24 24"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M8 7h8M8 11h1m6 0h1m-8 3h1m6 0h1m-8 3h1m6 0h1"/></symbol>
 <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><path d="M3 21v-3a6 6 0 0 1 12 0v3M16 5a3 3 0 0 1 0 6M17 15a5 5 0 0 1 4 5"/></symbol>
 <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18m-13 5 3 3 5-5"/></symbol>
 <symbol id="i-hammer" viewBox="0 0 24 24"><path d="m14 4 6 6-3 3-6-6zM4 19l8-9 3 3-9 8zM10 3l3-1 9 9-1 3"/></symbol>
@@ -32,6 +33,7 @@
     <p class="nav-label">GUILD LEDGER</p>
     <button class="nav" data-tab="recipes" ><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-book"></use></svg><span>Recipe book</span></button>
     <button class="nav" data-tab="professions" ><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-skills"></use></svg><span>Professions</span></button>
+    <button class="nav" data-tab="tools"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-calculator"></use></svg><span>Tools</span></button>
     <button class="nav" data-tab="hall" data-pane="people"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-users"></use></svg><span>Members & alts</span></button>
     <button class="nav" data-tab="account"><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-users"></use></svg><span>Manage My Account</span></button>
     <button class="nav" data-tab="admin" id="admin-nav" hidden><svg aria-hidden="true" viewBox="0 0 24 24"><use href="#i-settings"></use></svg><span>Administration</span></button>
@@ -72,6 +74,32 @@
   <section id="recipes" class="tab-panel" hidden><div class="section-heading"><div><div class="eyebrow gold">FROM THE GUILD WORKBENCH</div><h2>Who can make it?</h2></div><span class="subtle">Search the guild’s observed recipes</span></div><div class="filters panel"><label class="search"><span aria-hidden="true">⌕</span><input id="recipe-search" type="search" placeholder="Search a recipe, profession, or crafter…" aria-label="Search known recipes"></label><select id="recipe-profession" aria-label="Filter recipes by profession"><option value="">All professions</option></select></div><p class="subtle">A listed crafter has that recipe in Blizzard’s returned list of learned recipes. Missing recipes and unreported lists have unknown coverage.</p><div id="recipe-results" class="recipe-grid"></div><div id="recipe-empty" class="empty panel"><div class="empty-symbol">▤</div><h3>A recipe book written together.</h3><p>No learned recipes have been observed yet. This does not establish that nobody knows them.</p></div><button id="more-recipes" class="button secondary" hidden>Show more recipes</button></section>
   <section id="hierarchy" class="tab-panel" hidden><div class="section-heading"><div><div class="eyebrow gold">OUR COMPANY, IN ORDER</div><h2>Guild hierarchy</h2></div></div><p class="subtle">Members are ordered by their in-game guild rank. Each player is represented by their highest-ranked guild character; ties use the highest level. Rank names are suggested guild labels and can be edited by the administrator.</p><p id="hierarchy-feedback" class="notice" hidden></p><div id="hierarchy-content"></div></section>
   <section id="gallery" class="tab-panel" hidden><div id="gallery-content"></div></section>
+  <section id="tools" class="tab-panel" hidden>
+    <article class="panel tool-card" aria-labelledby="skinning-title">
+      <h2 id="skinning-title">Skinning calculator</h2>
+      <div class="skinning-calculator">
+        <div class="skinning-calculation">
+          <label for="skinning-mob-level">Mob level</label>
+          <input id="skinning-mob-level" type="number" min="1" max="63" step="1" inputmode="numeric" aria-describedby="skinning-mob-hint" placeholder="e.g. 17">
+          <p id="skinning-mob-hint" class="subtle">Enter a whole level from 1 to 63.</p>
+          <div class="skinning-result">
+            <span id="skinning-required-label">Minimum Skinning skill</span>
+            <output id="skinning-required" for="skinning-mob-level" aria-labelledby="skinning-required-label">—</output>
+          </div>
+        </div>
+        <div class="skinning-calculation">
+          <label for="skinning-current-skill">Your Skinning skill</label>
+          <input id="skinning-current-skill" type="number" min="0" step="1" inputmode="numeric" aria-describedby="skinning-skill-hint" placeholder="e.g. 53">
+          <p id="skinning-skill-hint" class="subtle">Enter a whole number, including any active gear bonuses. Use 0 if untrained.</p>
+          <div class="skinning-result">
+            <span id="skinning-highest-label">Highest mob level</span>
+            <output id="skinning-highest" for="skinning-current-skill" aria-labelledby="skinning-highest-label">—</output>
+          </div>
+        </div>
+      </div>
+      <p class="subtle skinning-note">Uses standard thresholds for skinnable mobs. Check the in-game tooltip for special creatures. <a href="https://www.icy-veins.com/wow-forever/skinning-leveling-guide/" target="_blank" rel="noopener noreferrer">Forever Skinning guide</a></p>
+    </article>
+  </section>
   <section id="account" class="tab-panel" hidden><div id="account-content"></div></section>
   <section id="admin" class="tab-panel" hidden>
     <nav class="admin-section-nav" aria-label="Administration sections">

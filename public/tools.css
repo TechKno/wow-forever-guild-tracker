@@ -1,0 +1,62 @@
+.tool-card {
+  max-width: 840px;
+  padding: clamp(18px, 4vw, 32px);
+}
+
+.tool-card h2 {
+  margin: 0 0 20px;
+}
+
+.skinning-calculator {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+  gap: 16px;
+}
+
+.skinning-calculation {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.skinning-calculation label {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.skinning-calculation input {
+  width: 100%;
+  min-height: 44px;
+  font-size: 16px;
+}
+
+.skinning-calculation input[aria-invalid="true"] {
+  border-color: var(--theme-error, #ab5146);
+}
+
+.skinning-calculation p,
+.skinning-note {
+  margin: 0;
+}
+
+.skinning-result {
+  display: grid;
+  gap: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.skinning-result output {
+  color: var(--text);
+  font: 600 clamp(19px, 4vw, 28px)/1.25 var(--serif, Georgia, serif);
+  font-variant-numeric: tabular-nums;
+}
+
+.skinning-note {
+  margin-top: 16px;
+}

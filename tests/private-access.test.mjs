@@ -112,7 +112,7 @@ test('private app aliases redirect anonymous users to Battle.net and signed nonm
 });
 
 test('direct private assets and unknown HTML cannot bypass the gate even if an asset binding falls back to the private app',async()=>{
-  const f=await fixture(),assetPaths=['/gallery.js','/gallery.css','/app.js','/hall.js','/adventures.js','/talents.js','/style.css','/talents.css','/assets/other.png','/index.html/','/unknown'];
+  const f=await fixture(),assetPaths=['/gallery.js','/gallery.css','/tools.js','/tools.css','/app.js','/hall.js','/adventures.js','/talents.js','/style.css','/talents.css','/assets/other.png','/index.html/','/unknown'];
   for(const path of assetPaths){const response=await worker.fetch(anonymous(path,{headers:{Accept:'text/html'}}),f.env);assert.equal(response.status,401,path);assert.equal(response.headers.get('Location'),null);const data=await response.json();assert.equal(data.access_required,true);assert(!JSON.stringify(data).includes(PRIVATE));}
   for(const path of ['/unknown.html','/INDEX.HTML','/guild%2findex.html']){
     const response=await worker.fetch(anonymous(path,{headers:{Accept:'text/html'}}),f.env);assert.equal(response.status,303);assert.equal(response.headers.get('Location'),'/auth/login');

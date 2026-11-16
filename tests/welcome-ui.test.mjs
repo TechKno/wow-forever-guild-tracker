@@ -63,7 +63,7 @@ test('a count without a valid observation time is shown without inventing freshn
 });
 
 test('every supported old dashboard fragment goes through the private guildhall entry',()=>{
-  for(const route of ['overview','roster','hall','crafting','events','members','recipes','professions','history','adventures','status','wishlists']){
+  for(const route of ['overview','roster','hall','crafting','events','members','recipes','professions','tools','history','adventures','status','wishlists']){
     const p=page({hash:'#'+route});assert.deepEqual(p.redirects,['/guild#'+route]);assert.equal(p.calls.length,0);
   }
 });
